@@ -1,0 +1,195 @@
+<#
+.SYNOPSIS
+    Renders the images of the guide and the readme: the window (light and dark, after a search, after a
+    cancellation, after a restore, in rooms mode, after a transfer) and the HTML report, from fictitious data.
+
+.DESCRIPTION
+    No tenant and no real data: the meetings come from the simulated tenant of the tests
+    (tests\MeetingCleanup.FakeGraph.ps1), loaded inside the module, with contoso.com names. The window is
+    rendered off screen (RenderTargetBitmap); the report is opened by Microsoft Edge headless.
+
+    Writes docs\images\gui-search-light.png, gui-search-dark.png, gui-done-light.png, gui-restore-light.png,
+    gui-rooms-light.png, gui-transfer-light.png, report-overview.png, report-dark.png. Needs an interactive session (WPF) and Microsoft Edge.
+
+.NOTES
+    Author  : Nicolas Fabert
+    Version : 1.2.0
+#>
+#Requires -Version 7.4
+[CmdletBinding()]
+param([string]$Destination = (Join-Path $PSScriptRoot '..\docs\images'))
+
+$ErrorActionPreference = 'Stop'
+$root = Split-Path $PSScriptRoot -Parent
+$Destination = [IO.Path]::GetFullPath($Destination)
+[void][IO.Directory]::CreateDirectory($Destination)
+# The reports of the images go where a real installation would put them (the path shows in the window),
+# only when that folder does not exist (it is removed at the end); otherwise under artifacts\.
+$neutral = Join-Path $env:SystemDrive 'Tools\MeetingCleanup'
+$ownNeutral = -not (Test-Path -LiteralPath $neutral)
+$ownParent = -not (Test-Path -LiteralPath (Split-Path $neutral -Parent))
+$work = if ($ownNeutral) { Join-Path $neutral 'reports' } else { Join-Path $root 'artifacts\doc-images' }
+if (-not $ownNeutral -and (Test-Path $work)) { Remove-Item $work -Recurse -Force }
+try { [void][IO.Directory]::CreateDirectory($work) }
+catch { $ownNeutral = $false; $work = Join-Path $root 'artifacts\doc-images'; if (Test-Path $work) { Remove-Item $work -Recurse -Force }; [void][IO.Directory]::CreateDirectory($work) }
+Import-Module (Join-Path $root 'MeetingCleanup.psd1') -Force
+$module = Get-Module MeetingCleanup
+
+& $module {
+    param($FakePath, $Destination, $Work)
+    Set-StrictMode -Off
+    . $FakePath
+    function script:Start-MclGraphSend { param($Method, $Url, $Body) [pscustomobject]@{ Task = $null; Request = $null; Response = (Invoke-FakeGraphHttp -Method $Method -Url $Url -Body $Body) } }
+    $script:Quiet = $true
+
+    # ---- fictitious tenant: Megan Bowen has left, her mailbox is kept as a shared mailbox ------------------
+    $seed = {
+        Reset-FakeTenant
+        $d = 'contoso.com'
+        Add-FakeMailbox "megan.bowen@$d" -Name 'Megan Bowen' -Aliases "mbowen@$d"
+        foreach ($u in 'alex.wilber', 'lidia.holloway', 'adele.vance', 'joni.sherman', 'lee.gu', 'nestor.wilke') { Add-FakeMailbox "$u@$d" -Name ((Get-Culture).TextInfo.ToTitleCase($u.Replace('.', ' '))) }
+        foreach ($r in 'paris-01', 'paris-02', 'lyon-01') { Add-FakeMailbox "room-$r@$d" -Name "Room $r" -Kind Room }
+        Add-FakeGroup "sales-team@$d" -Name 'Sales team' -Members "joni.sherman@$d", "lee.gu@$d"
+        $year = (Get-Date).Year + 1
+        $weekly = @{ pattern = @{ type = 'weekly'; interval = 1; daysOfWeek = @('monday') }; range = @{ type = 'noEnd'; startDate = "$year-01-05" } }
+        Add-FakeMeeting -Organizer "megan.bowen@$d" -OrganizerName 'Megan Bowen' -Subject 'Weekly sales review' -Start "$year-01-05T08:30:00" -Attendees "alex.wilber@$d", "sales-team@$d" -Rooms "room-paris-01@$d" -Recurrence $weekly | Out-Null
+        Add-FakeMeeting -Organizer "megan.bowen@$d" -OrganizerName 'Megan Bowen' -Subject 'Q1 budget workshop' -Start "$year-01-14T13:00:00" -Minutes 120 -Attendees "lidia.holloway@$d", "adele.vance@$d", "partner@fabrikam.com" -Rooms "room-paris-02@$d", "room-lyon-01@$d" | Out-Null
+        Add-FakeMeeting -Organizer "megan.bowen@$d" -OrganizerName 'Megan Bowen' -Subject 'Project Atlas kick-off' -Start "$year-01-20T09:00:00" -Minutes 60 -Attendees "nestor.wilke@$d", "adele.vance@$d" -Rooms "room-lyon-01@$d" -NoOrganizerCopy | Out-Null
+        Add-FakeMeeting -Organizer "megan.bowen@$d" -OrganizerName 'Megan Bowen' -Subject '1:1 Alex / Megan' -Start "$year-01-08T16:00:00" -Attendees "alex.wilber@$d" | Out-Null
+        # Lynne Robbins has left too, her mailbox is deleted: her meeting is found in a room.
+        Add-FakeMeeting -Organizer "lynne.robbins@$d" -OrganizerName 'Lynne Robbins' -Subject 'Supplier quarterly review' -Start "$year-02-03T14:00:00" -Minutes 60 -Attendees "adele.vance@$d", "lee.gu@$d" -Rooms "room-paris-02@$d" | Out-Null
+        Add-FakeMeeting -Organizer "alex.wilber@$d" -OrganizerName 'Alex Wilber' -Subject 'Not Megan''s meeting' -Start "$year-01-08T10:00:00" -Attendees "megan.bowen@$d" -Rooms "room-paris-01@$d" | Out-Null
+    }
+    . $seed
+
+    $settings = Get-MclDefaultConfiguration
+    $settings.TenantId = 'contoso.onmicrosoft.com'; $settings.Organization = 'contoso.onmicrosoft.com'; $settings.AppId = '6b8e1f0a-3c52-4b8e-9a51-0f2d7c3e4a19'
+    $settings.CertificateThumbprint = '3F2A9C7B1E6D4A8F0B5C2E9D7A1F4B6C8E0D2A5B'; $settings.TimeZone = 'Europe/Paris'
+    $settings.OutputPath = $Work; $settings.LogPath = Join-Path $Work 'logs'; $settings.ConfigPath = 'config\MeetingCleanup.config.psd1'
+    $token = New-FakeToken -TenantId '0b6c7d1e-2f3a-4b5c-8d9e-0f1a2b3c4d5e'
+    $script:Graph = @{ Settings = $settings; Token = $token; ExpiresUtc = [datetime]::UtcNow.AddHours(1); Certificate = $null; Secret = $null; Roles = @('Calendars.ReadWrite', 'User.Read.All', 'Place.Read.All', 'GroupMember.Read.All')
+        CanWrite = $true; CanRead = $true; CanReadUsers = $true; CanReadPlaces = $true; CanReadGroups = $true; TenantGuid = '0b6c7d1e-2f3a-4b5c-8d9e-0f1a2b3c4d5e'; AppName = 'Meeting Cleanup'; Renew = { @{ Token = $token; ExpiresUtc = [datetime]::UtcNow.AddHours(1) } } }
+    function Connect-MclGraph { param($Settings, $Secret, $Action) [pscustomobject]$script:Graph }
+    # Exchange Online PowerShell of the restore: the Recoverable Items of the simulated tenant.
+    function script:Connect-MclExchange { param($Settings, $Secret) }
+    function script:Disconnect-MclExchange { }
+    function script:Get-MclPurgedItems { param([string[]]$Mailbox, [datetime]$StartUtc, [datetime]$EndUtc) Get-FakeRecoverableItems -Mailbox $Mailbox -StartUtc $StartUtc -EndUtc $EndUtc }
+    function script:Restore-MclPurgedItem { param([string]$Mailbox, [string]$EntryId) Restore-FakeRecoverableItem -Mailbox $Mailbox -EntryId $EntryId }
+    function script:Invoke-MclChangeMeetingOrganizer { param([string]$Mailbox, [string]$EventId, [string]$NewOrganizer, $From) Invoke-FakeChangeMeetingOrganizer -Mailbox $Mailbox -EventId $EventId -NewOrganizer $NewOrganizer }
+
+    $render = {
+        param($Form, [string]$Path)
+        $w = $Form.Form
+        $w.WindowStartupLocation = 'Manual'; $w.Left = -4000; $w.Top = 0; $w.Width = 1320; $w.Height = 900; $w.ShowInTaskbar = $false
+        if (-not $w.IsVisible) { $w.Show() }
+        [Windows.Threading.Dispatcher]::CurrentDispatcher.Invoke([Action] {}, [Windows.Threading.DispatcherPriority]::Background)
+        $w.UpdateLayout()
+        $rtb = [Windows.Media.Imaging.RenderTargetBitmap]::new([int]$w.ActualWidth, [int]$w.ActualHeight, 96, 96, [Windows.Media.PixelFormats]::Pbgra32)
+        $rtb.Render($w.Content)
+        $enc = [Windows.Media.Imaging.PngBitmapEncoder]::new(); $enc.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($rtb))
+        $fs = [IO.File]::Create($Path); try { $enc.Save($fs) } finally { $fs.Dispose() }
+    }
+    $search = {
+        param([string]$Theme)
+        $f = New-MclForm -Configuration $settings -Theme $Theme
+        $f.Form.WindowStartupLocation = 'Manual'; $f.Form.Left = -4000; $f.Form.ShowInTaskbar = $false; $f.Form.Show()
+        $f.Controls.Organizer.Text = "megan.bowen@$d" + [Environment]::NewLine + "lynne.robbins@$d"
+        $f.Controls.StartDate.SelectedDate = [datetime]"$year-01-01"
+        $f.Controls.EndDate.SelectedDate = [datetime]"$year-03-31"
+        $f.Controls.ConnectionExpander.IsExpanded = $false
+        Invoke-MclGuiSearch
+        $f
+    }
+
+    $light = & $search 'Light'
+    & $render $light (Join-Path $Destination 'gui-search-light.png')
+    $reportFolder = $script:Gui.LastFolder
+    $light.Form.Close()
+    $dark = & $search 'Dark'
+    & $render $dark (Join-Path $Destination 'gui-search-dark.png')
+    $dark.Form.Close()
+
+    # ---- after "Cancel and clean" on three meetings -----------------------------------------------------
+    $done = & $search 'Light'
+    foreach ($row in @($done.Rows)) { if ($row.Subject -like '1:1*') { $row.Selected = $false } }
+    $done.Controls.ActionCancel.IsChecked = $true
+    $done.Controls.Comment.Text = 'Megan Bowen has left Contoso: this meeting is cancelled. Contact Alex Wilber for the follow-up.'
+    $g = $script:Gui
+    foreach ($row in @($g.Rows)) { $row.Meeting.Selected = [bool]$row.Selected }
+    Start-MclGuiRun 'Cancelling...'
+    try {
+        Initialize-MclSteps -Total 3
+        $g.Acted = $true
+        $g.Result = Invoke-MclCleanup -Settings $settings -Result $g.Result -Action Cancel -Comment $done.Controls.Comment.Text
+        Save-MclGuiReport -Settings $settings
+        Update-MclGuiRows
+        $n = $g.Result.Counts
+        Set-MclGuiStatus ('{0} {1} {2} removed {1} {3} cancelled {1} {4} failed' -f $g.Result.Status, [char]0x00B7, $n.Removed, $n.Cancelled, $n.Failed) $g.Result.Status
+    }
+    finally { Stop-MclGuiRun }
+    & $render $done (Join-Path $Destination 'gui-done-light.png')
+    $doneFolder = $script:Gui.LastFolder
+    $done.Form.Close()
+
+    # ---- Remove, then Restore... of that run (the tenant reset) -------------------------------------------
+    . $seed
+    $restore = & $search 'Light'
+    foreach ($row in @($restore.Rows)) { if ($row.Subject -like '1:1*') { $row.Selected = $false } }
+    Update-MclGuiState
+    $script:GuiAnswers = [Collections.Generic.Queue[string]]::new()
+    $script:GuiAnswers.Enqueue('Yes')
+    Invoke-MclGuiApply
+    $script:GuiAnswers.Enqueue('Yes'); $script:GuiAnswers.Enqueue('Yes')
+    Invoke-MclGuiRestore
+    $script:GuiAnswers = $null
+    $restore.Controls.Meetings.SelectedIndex = 1
+    & $render $restore (Join-Path $Destination 'gui-restore-light.png')
+    $restore.Form.Close()
+
+    # ---- rooms mode: every meeting of a room in January, a series limited to its occurrences ---------------
+    . $seed
+    $rooms = New-MclForm -Configuration $settings -Theme 'Light'
+    $rooms.Form.WindowStartupLocation = 'Manual'; $rooms.Form.Left = -4000; $rooms.Form.ShowInTaskbar = $false; $rooms.Form.Show()
+    $rooms.Controls.ModeRooms.IsChecked = $true
+    $rooms.Controls.Organizer.Text = "room-paris-01@$d" + [Environment]::NewLine + "room-paris-02@$d"
+    $rooms.Controls.StartDate.SelectedDate = [datetime]"$year-01-05"
+    $rooms.Controls.EndDate.SelectedDate = [datetime]"$year-01-16"
+    $rooms.Controls.ConnectionExpander.IsExpanded = $false
+    $rooms.Controls.ActionCancel.IsChecked = $true
+    $rooms.Controls.Comment.Text = 'The rooms of the 2nd floor are closed for works from 5 to 16 January.'
+    Invoke-MclGuiSearch
+    $rooms.Controls.Meetings.SelectedIndex = 0
+    & $render $rooms (Join-Path $Destination 'gui-rooms-light.png')
+    $rooms.Form.Close()
+
+    # ---- transfer: Megan (mailbox kept) moved by Exchange Online, Lynne (deleted) re-created ---------------
+    . $seed
+    $transfer = & $search 'Light'
+    foreach ($row in @($transfer.Rows)) { if ($row.Subject -notin 'Q1 budget workshop', 'Supplier quarterly review') { $row.Selected = $false } }
+    $transfer.Controls.ActionTransfer.IsChecked = $true
+    $transfer.Controls.NewOrganizer.Text = "alex.wilber@$d"
+    Update-MclGuiState
+    $script:GuiAnswers = [Collections.Generic.Queue[string]]::new()
+    $script:GuiAnswers.Enqueue('Yes')
+    Invoke-MclGuiApply
+    $script:GuiAnswers = $null
+    $transfer.Controls.Meetings.SelectedIndex = 4
+    & $render $transfer (Join-Path $Destination 'gui-transfer-light.png')
+    $transfer.Form.Close()
+    [pscustomobject]@{ Report = (Join-Path $reportFolder 'MeetingCleanup.html'); Done = (Join-Path $doneFolder 'MeetingCleanup.html') }
+} (Join-Path $root 'tests\MeetingCleanup.FakeGraph.ps1') $Destination $work | Set-Variable reports
+
+# ---- the HTML report, opened by Microsoft Edge headless ------------------------------------------------
+$edge = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $edge) { throw 'Microsoft Edge is needed for the images of the report.' }
+foreach ($shot in @(@{ Html = $reports.Report; Theme = 'light'; File = 'report-overview.png' }, @{ Html = $reports.Done; Theme = 'dark'; File = 'report-dark.png' })) {
+    $profile = Join-Path $work "edge-$([guid]::NewGuid().ToString('N'))"
+    $url = ([Uri]$shot.Html).AbsoluteUri + "?scoutTheme=$($shot.Theme)"
+    & $edge --headless=new --disable-gpu --hide-scrollbars --user-data-dir="$profile" --window-size=1360,1180 --screenshot="$(Join-Path $Destination $shot.File)" $url 2>&1 | Out-Null
+    Start-Sleep -Milliseconds 500
+}
+if ($ownNeutral) {
+    Start-Sleep -Seconds 1
+    Remove-Item -LiteralPath ($(if ($ownParent) { Split-Path $neutral -Parent } else { $neutral })) -Recurse -Force -ErrorAction SilentlyContinue
+}
+Get-ChildItem -LiteralPath $Destination -Filter '*.png' | Sort-Object Name | ForEach-Object { '{0,10:N0}  {1}' -f $_.Length, $_.Name }
