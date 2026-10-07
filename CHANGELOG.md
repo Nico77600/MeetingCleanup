@@ -3,6 +3,23 @@
 All notable changes are listed here. Versions follow MAJOR.MINOR.PATCH (see the guide, Appendix D).
 Author: Nicolas Fabert.
 
+## [1.2.3] — 2026-10-07
+
+### Added
+- **Transfers tab** in the HTML report of a *Transfer* run, open first: one row per meeting of the transfer — old
+  organizer and the state of his mailbox, new organizer, method (*Exchange Online* or *Re-created*), status, the new
+  meeting (moved or created, with the attendees and rooms invited), what became of the old meeting at the old
+  organizer, the old copies removed, failed or left, and the notes. Filters by status and method; a row opens the
+  meeting and its copies. The same rows in **`MeetingCleanup-Transfers.csv`**.
+
+### Fixed
+- **`Calendars.ReadWrite.All` is accepted** like `Calendars.ReadWrite` (and `Calendars.Read.All` like `Calendars.Read`).
+  Microsoft Graph documents them for the work hours and locations of the users, but Exchange Online accepts them for
+  the events — measured in the lab tenant with an application holding only that permission: events read, created and
+  removed (`Calendars.Read.All`: read only, a creation refused). An application with `Calendars.ReadWrite.All` and
+  without `Calendars.ReadWrite` stopped at the connection with *no application permission Calendars.ReadWrite*.
+- `tools\New-DocumentationImages.ps1`: a headless Edge that stays open after its screenshot is stopped after 60 s.
+
 ## [1.2.2] — 2026-10-06
 
 The progress of a run, at a glance.

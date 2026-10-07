@@ -9,7 +9,7 @@
 //   GuiRows   the rows of the window (compiled objects: WPF binds and scrolls them without PowerShell)
 //
 // Author : Nicolas Fabert
-// Version: 1.2.2
+// Version: 1.2.3
 
 using System;
 using System.Collections;
@@ -28,7 +28,7 @@ namespace MeetingCleanupNative
 {
     public static class Fast
     {
-        public const string Version = "1.2.2";
+        public const string Version = "1.2.3";
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
         static readonly string[] CopyRoles = { "Organizer", "Attendee", "Room" };
 
@@ -394,6 +394,65 @@ namespace MeetingCleanupNative
                     }
                 }
                 t.Rows.Add(new object[] { Text(o, "Input"), Text(o, "DisplayName"), Text(o, "PrimaryAddress"), Text(o, "State"), Text(o, "Detail"), mine.Count, series, copies, removed, cancelled, restored, transferred, failed });
+            }
+            return t;
+        }
+
+        /// <summary>
+        /// One row per meeting of a transfer (Get-MclTransferRows): the old organizer and its state, the new one, the
+        /// method, the new meeting and its invitation, what became of the old organizer's copy and of the old copies.
+        /// </summary>
+        public static Table TransferTable(object organizers, object meetings)
+        {
+            var t = new Table("MeetingId", "Subject", "StartText", "Kind", "Recurrence", "OldOrganizer", "OldOrganizerName", "OldOrganizerState", "OldOrganizerDetail",
+                "NewOrganizer", "Method", "Status", "NewMeetingId", "NewMeeting", "NewMeetingDetail", "Invited", "Rooms", "OldOrganizerCopy",
+                "OldCopiesRemoved", "OldCopiesFailed", "OldCopiesLeft", "Selected", "Notes");
+            // The state of each organizer of the run (short, and the detail of the search), by every address it has.
+            var state = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+            foreach (var o in Items(organizers))
+            {
+                var s = Text(o, "State") == "Mailbox" ? (Text(o, "Account") == "Deleted" ? "Account deleted, mailbox present" : "Mailbox present")
+                    : Text(o, "State") == "NoMailbox" ? "No mailbox" : "Not in the directory";
+                var pair = new[] { s, Text(o, "Detail") };
+                foreach (var a in Items(Prop(o, "Addresses"))) { var k = ToText(a); if (k.Length > 0) { state[k] = pair; } }
+                var p = Text(o, "PrimaryAddress"); if (p.Length > 0) { state[p] = pair; }
+                var i = Text(o, "Input"); if (i.Length > 0 && !state.ContainsKey(i)) { state[i] = pair; }
+            }
+            foreach (var m in Items(meetings))
+            {
+                // The meetings of the transfer only: an unticked meeting was not part of it.
+                if (!Flag(m, "Selected")) { continue; }
+                string newMeeting = "", newDetail = "", oldOrganizerCopy = "";
+                int invited = 0, rooms = 0, removed = 0, failed = 0, left = 0;
+                var native = Text(m, "TransferMethod") == "Native";
+                foreach (var c in Items(Prop(m, "Copies")))
+                {
+                    var role = Text(c, "Role"); var result = Text(c, "Result");
+                    if (role == "New organizer") { newMeeting = result; newDetail = Text(c, "Detail"); continue; }
+                    if (Text(c, "EventId").Length == 0) { continue; }
+                    if (role == "Organizer") { if (oldOrganizerCopy.Length == 0) { oldOrganizerCopy = result.Length > 0 ? result : "Present"; } }
+                    else if (role == "Attendee" || role == "Room")
+                    {
+                        if (role == "Room") { rooms++; } else { invited++; }
+                        if (result == "Removed" || result == "Already gone") { removed++; }
+                        else if (result == "Failed" || result == "Not done") { failed++; }
+                        // Moved by Exchange Online: the old copies are the meeting itself, updated in place.
+                        else if (!native) { left++; }
+                    }
+                }
+                if (oldOrganizerCopy.Length == 0) { oldOrganizerCopy = Text(m, "OrganizerCopy"); }
+                var method = Text(m, "TransferMethod");
+                var methodText = method == "Native" ? "Exchange Online" : method == "Recreate" ? "Re-created" : "";
+                var key = Text(m, "OrganizerKey"); if (key.Length == 0) { key = Text(m, "Organizer"); }
+                string[] orgState;
+                if (!state.TryGetValue(key, out orgState) && !state.TryGetValue(Text(m, "Organizer"), out orgState)) { orgState = new[] { "", "" }; }
+                var notes = new List<string>();
+                foreach (var n in Items(Prop(m, "Notes"))) { notes.Add(ToText(n)); }
+                t.Rows.Add(new object[] {
+                    Text(m, "MeetingId"), Text(m, "Subject"), Text(m, "StartText"), Text(m, "Kind"), Text(m, "Recurrence"),
+                    Text(m, "Organizer"), Text(m, "OrganizerName"), orgState[0], orgState[1],
+                    Text(m, "NewOrganizer"), methodText, Text(m, "Status"), Text(m, "NewMeetingId"), newMeeting, newDetail,
+                    invited, rooms, oldOrganizerCopy, removed, failed, left, Flag(m, "Selected"), notes.ToArray() });
             }
             return t;
         }

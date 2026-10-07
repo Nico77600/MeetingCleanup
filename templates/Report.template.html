@@ -2,9 +2,10 @@
 <!--
     Meeting Cleanup - HTML template
     Author  : Nicolas Fabert
-    Version : 1.1.0
-    Export-MclReport (src\MeetingCleanup.Report.ps1) copies this file and replaces four markers, each exactly
-    once: TITLE (text), and SUMMARY, MEETINGS, COPIES, ORGANIZERS (JSON, in the script blocks at the end of the body).
+    Version : 1.2.3
+    Export-MclReport (src\MeetingCleanup.Report.ps1) copies this file and replaces six markers, each exactly
+    once: TITLE (text), and SUMMARY, MEETINGS, COPIES, ORGANIZERS, TRANSFERS (JSON, in the script blocks at the end of
+    the body; TRANSFERS is an empty list outside a Transfer run, and its tab is hidden then).
     Everything else is static: texts, colours and tabs can be changed here. Same design system as EAS OAuth
     Mailbox, Message Trace Report and Purview DLP Report (--cp-* variables).
 -->
@@ -15,6 +16,8 @@
     const param = new URLSearchParams(window.location.search).get("scoutTheme");
     const theme = param === "light" || param === "dark" ? param : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
     document.documentElement.setAttribute("data-theme", theme);
+    // scoutFocus=tables (documentation images): the tabs and their tables only.
+    if (new URLSearchParams(window.location.search).get("scoutFocus") === "tables") document.documentElement.setAttribute("data-focus", "tables");
   })();
 </script>
 <style>
@@ -89,7 +92,8 @@ th { position:sticky; top:0; z-index:1; background:var(--cp-surface-soft); font-
 th.sorted::after { content:" \25BE"; color:var(--cp-accent); } th.sorted.asc::after { content:" \25B4"; }
 tbody tr:hover { background:var(--cp-accent-soft); } tr.click { cursor:pointer; }
 td { overflow-wrap:anywhere; } .num { text-align:right; font-variant-numeric:tabular-nums; } .mono { font-family:Consolas, "Cascadia Mono", monospace; font-size:12px; }
-.nowrap { white-space:nowrap; } .sub { display:block; color:var(--cp-text-muted); font-size:12px; margin-top:2px; }
+.nowrap { white-space:nowrap; } .addr { overflow-wrap:normal; } .wide { min-width:190px; } .sub.to { color:var(--cp-text); margin-top:6px; white-space:nowrap; }
+[data-focus="tables"] body > header, [data-focus="tables"] #notices, [data-focus="tables"] body > section.block:not(#tables), [data-focus="tables"] footer { display:none; } .sub { display:block; color:var(--cp-text-muted); font-size:12px; margin-top:2px; }
 .empty { padding:24px; text-align:center; color:var(--cp-text-muted); }
 .notice { position:relative; margin:0 0 16px; padding:10px 14px; border-radius:10px; border-left:4px solid var(--cp-warning); background:var(--cp-warning-soft); }
 .notice.info { border-left-color:var(--cp-info); background:var(--cp-info-soft); }
@@ -128,11 +132,12 @@ footer { color:var(--cp-text-muted); font-size:12px; text-align:center; margin-t
   <div class="scope" id="scope"></div>
 </section>
 
-<section class="block">
+<section class="block" id="tables">
   <div class="tabs" role="tablist">
     <button class="active" data-tab="meetings">Meetings<span class="count" id="count-meetings"></span></button>
     <button data-tab="copies">Copies<span class="count" id="count-copies"></span></button>
     <button data-tab="organizers">Organizers<span class="count" id="count-organizers"></span></button>
+    <button data-tab="transfers" id="tab-button-transfers" hidden>Transfers<span class="count" id="count-transfers"></span></button>
   </div>
   <div id="tab-meetings">
     <div class="controls"><input class="search" id="search-meetings" type="search" placeholder="Search a subject, an organizer, a status..."><label>Status <select id="filter-meetings"><option value="">All</option></select></label></div>
@@ -146,6 +151,10 @@ footer { color:var(--cp-text-muted); font-size:12px; text-align:center; margin-t
     <div class="controls"><input class="search" id="search-organizers" type="search" placeholder="Search an organizer, a state..."><label>State <select id="filter-organizers"><option value="">All</option></select></label></div>
     <div class="scroll"><table id="organizers"><thead></thead><tbody></tbody></table><div class="empty" id="empty-organizers" hidden>No organizer.</div></div>
   </div>
+  <div id="tab-transfers" hidden>
+    <div class="controls"><input class="search" id="search-transfers" type="search" placeholder="Search a meeting, an organizer, a note..."><label>Status <select id="filter-transfers"><option value="">All</option></select></label><label>Method <select id="filter-method"><option value="">All</option></select></label></div>
+    <div class="scroll"><table id="transfers"><thead></thead><tbody></tbody></table><div class="empty" id="empty-transfers" hidden>No meeting was part of the transfer.</div></div>
+  </div>
 </section>
 
 <dialog id="detail"><div class="dialog-head"><h2 id="detail-title"></h2><button id="detail-close">Close</button></div><div class="dialog-body" id="detail-body"></div></dialog>
@@ -155,6 +164,7 @@ footer { color:var(--cp-text-muted); font-size:12px; text-align:center; margin-t
 <script type="application/json" id="data-meetings">{{MEETINGS_JSON}}</script>
 <script type="application/json" id="data-copies">{{COPIES_JSON}}</script>
 <script type="application/json" id="data-organizers">{{ORGANIZERS_JSON}}</script>
+<script type="application/json" id="data-transfers">{{TRANSFERS_JSON}}</script>
 <script>
 (() => {
   const read = id => JSON.parse(document.getElementById(id).textContent || "null");
@@ -162,12 +172,13 @@ footer { color:var(--cp-text-muted); font-size:12px; text-align:center; margin-t
   const M = [].concat(read("data-meetings") || []).filter(Boolean);
   const C = [].concat(read("data-copies") || []).filter(Boolean);
   const O = [].concat(read("data-organizers") || []).filter(Boolean);
+  const T = [].concat(read("data-transfers") || []).filter(Boolean);
   const $ = id => document.getElementById(id);
   const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const fmt = n => Number(n || 0).toLocaleString("en-US");
   const list = v => v == null ? [] : (Array.isArray(v) ? v : [v]);
   const n = S.Counts || {};
-  const tone = s => ({ Removed: "good", Cancelled: "good", "Already gone": "good", Restored: "good", "Already present": "good", Completed: "good", Yes: "good", Mailbox: "good", Present: "info", Found: "info", Kept: "warn", Partial: "warn", Warning: "warn", "Not processed": "warn", "Not found": "warn", "Not restorable": "warn", Transferred: "good", Created: "good", "Mailbox deleted": "warn", "Not read": "warn", NoMailbox: "warn", NotInDirectory: "warn", "No copy": "", Failed: "bad", "Not done": "bad", No: "bad", Skipped: "", "Nothing to do": "", Expanded: "accent" }[s] || "");
+  const tone = s => ({ Removed: "good", Cancelled: "good", "Already gone": "good", Restored: "good", "Already present": "good", Completed: "good", Yes: "good", Mailbox: "good", Present: "info", Found: "info", Kept: "warn", Partial: "warn", Warning: "warn", "Not processed": "warn", "Not found": "warn", "Not restorable": "warn", Transferred: "good", Created: "good", "Mailbox deleted": "warn", "Not read": "warn", NoMailbox: "warn", NotInDirectory: "warn", "No copy": "", "Exchange Online": "info", "Re-created": "accent", "Account deleted, mailbox present": "warn", "No mailbox": "warn", "Not in the directory": "warn", "Mailbox present": "good", Failed: "bad", "Not done": "bad", No: "bad", Skipped: "", "Nothing to do": "", Expanded: "accent" }[s] || "");
   const pill = s => s ? `<span class="pill ${tone(s)}">${esc(s)}</span>` : "";
   const organizers = list(S.Organizers).map(o => o.DisplayName ? `${o.DisplayName} <${o.PrimaryAddress}>` : o.Input);
   const action = S.Action || "Report";
@@ -285,11 +296,24 @@ footer { color:var(--cp-text-muted); font-size:12px; text-align:center; margin-t
     { key: "Transferred", label: "Transferred", num: true, cls: "num" },
     { key: "Failed", label: "Failed", num: true, cls: "num" }
   ];
+  // Transfer: one row per meeting, the organizer change at a glance; a row opens the meeting and its copies.
+  const transferCols = [
+    { key: "StartText", label: "Start", cls: "nowrap mono" },
+    { key: "Subject", label: "Meeting", cls: "wide", html: r => `<strong>${esc(r.Subject || "(no subject)")}</strong><span class="sub">${esc(r.Kind === "Series" ? r.Recurrence : "Single")}</span>` },
+    { key: "OldOrganizer", label: "From &rarr; to", cls: "addr", html: r => `${esc(r.OldOrganizerName || r.OldOrganizer)}<span class="sub">${esc(r.OldOrganizerName ? r.OldOrganizer : "")}</span>${r.OldOrganizerState ? `<span class="sub" title="${esc(r.OldOrganizerDetail)}">${pill(r.OldOrganizerState)}</span>` : ""}<span class="sub to">&rarr; <strong>${esc(r.NewOrganizer || "-")}</strong></span>` },
+    { key: "Method", label: "Method", html: r => r.Method ? pill(r.Method) + `<span class="sub">${r.Method === "Re-created" ? "one invitation, answered again" : "answers kept"}</span>` : `<span class="muted">-</span>` },
+    { key: "Status", label: "Status", html: r => pill(r.Status) },
+    { key: "NewMeeting", label: "New meeting", html: r => (r.NewMeeting ? pill(r.NewMeeting) : `<span class="muted">-</span>`) + (r.Method === "Re-created" && r.NewMeeting === "Created" ? `<span class="sub">invited ${fmt(r.Invited)} attendee(s) · ${fmt(r.Rooms)} room(s)</span>` : "") + (r.NewMeetingId ? `<span class="sub mono" title="${esc(r.NewMeetingId)}">${esc(r.NewMeetingId.slice(-16))}</span>` : "") },
+    { key: "OldOrganizerCopy", label: "Old meeting", html: r => pill(r.OldOrganizerCopy) + `<span class="sub">at the old organizer</span>` },
+    { key: "OldCopiesRemoved", label: "Old copies", num: true, cls: "num", html: r => r.Method === "Exchange Online" ? `<span class="muted">updated in place</span>` : fmt(r.OldCopiesRemoved) + `<span class="sub">removed</span>` + (r.OldCopiesFailed ? `<span class="sub"><span class="pill bad">${fmt(r.OldCopiesFailed)} failed</span></span>` : "") + (r.OldCopiesLeft ? `<span class="sub">${fmt(r.OldCopiesLeft)} left</span>` : "") },
+    { key: "Notes", label: "Notes", html: r => esc(list(r.Notes).join(" ")) || `<span class="muted">-</span>` }
+  ];
   const tm = table("meetings", meetingCols, M, showMeeting);
   const tc = table("copies", copyCols, C, null);
   const to = table("organizers", organizerCols, O, null);
+  const tt = table("transfers", transferCols, T, r => { const m = M.find(x => x.MeetingId === r.MeetingId); if (m) showMeeting(m); });
   const fill = (sel, values) => [...new Set(values.filter(Boolean))].sort().forEach(v => sel.insertAdjacentHTML("beforeend", `<option>${esc(v)}</option>`));
-  fill($("filter-meetings"), M.map(m => m.Status)); fill($("filter-copies"), C.map(c => c.Result || "(none)")); fill($("filter-role"), C.map(c => c.Role)); fill($("filter-organizers"), O.map(o => o.State));
+  fill($("filter-meetings"), M.map(m => m.Status)); fill($("filter-copies"), C.map(c => c.Result || "(none)")); fill($("filter-role"), C.map(c => c.Role)); fill($("filter-organizers"), O.map(o => o.State)); fill($("filter-transfers"), T.map(r => r.Status)); fill($("filter-method"), T.map(r => r.Method || "(not transferred)"));
   const textOf = o => Object.values(o).join(" ").toLowerCase();
   const applyMeetings = () => { const q = $("search-meetings").value.toLowerCase(), s = $("filter-meetings").value; tm.set(M.filter(m => (!q || textOf(m).includes(q)) && (!s || m.Status === s))); };
   const applyCopies = () => { const q = $("search-copies").value.toLowerCase(), s = $("filter-copies").value, r = $("filter-role").value; tc.set(C.filter(c => (!q || textOf(c).includes(q)) && (!s || (c.Result || "(none)") === s) && (!r || c.Role === r))); };
@@ -297,12 +321,16 @@ footer { color:var(--cp-text-muted); font-size:12px; text-align:center; margin-t
   ["search-copies", "filter-copies", "filter-role"].forEach(id => $(id).addEventListener("input", applyCopies));
   const applyOrganizers = () => { const q = $("search-organizers").value.toLowerCase(), s = $("filter-organizers").value; to.set(O.filter(o => (!q || textOf(o).includes(q)) && (!s || o.State === s))); };
   ["search-organizers", "filter-organizers"].forEach(id => $(id).addEventListener("input", applyOrganizers));
-  applyMeetings(); applyCopies(); applyOrganizers();
-  $("count-meetings").textContent = fmt(M.length); $("count-copies").textContent = fmt(C.length); $("count-organizers").textContent = fmt(O.length);
+  const applyTransfers = () => { const q = $("search-transfers").value.toLowerCase(), s = $("filter-transfers").value, k = $("filter-method").value; tt.set(T.filter(r => (!q || textOf(r).includes(q)) && (!s || r.Status === s) && (!k || (r.Method || "(not transferred)") === k))); };
+  ["search-transfers", "filter-transfers", "filter-method"].forEach(id => $(id).addEventListener("input", applyTransfers));
+  applyMeetings(); applyCopies(); applyOrganizers(); applyTransfers();
+  $("count-meetings").textContent = fmt(M.length); $("count-copies").textContent = fmt(C.length); $("count-organizers").textContent = fmt(O.length); $("count-transfers").textContent = fmt(T.length);
   document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("active", x === b));
-    ["meetings", "copies", "organizers"].forEach(t => { $("tab-" + t).hidden = b.dataset.tab !== t; });
+    ["meetings", "copies", "organizers", "transfers"].forEach(t => { $("tab-" + t).hidden = b.dataset.tab !== t; });
   }));
+  // A Transfer report opens on its Transfers tab.
+  if (transfer && T.length) { $("tab-button-transfers").hidden = false; $("tab-button-transfers").click(); }
 
   function showMeeting(m) {
     $("detail-title").textContent = m.Subject || "(no subject)";

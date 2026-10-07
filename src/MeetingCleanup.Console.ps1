@@ -13,7 +13,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.2
+    Version : 1.2.3
 #>
 
 $script:C = @{ Reset = ''; Bold = ''; Dim = ''; Accent = ''; AccentBg = ''; Green = ''; Yellow = ''; Red = ''; Blue = ''; White = '' }

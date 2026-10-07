@@ -208,6 +208,18 @@ Describe 'Microsoft Graph connection and requests' {
         $c.CanReadUsers, $c.CanReadPlaces, $c.CanReadGroups | Should -Be @($false, $false, $false)
     }
 
+    It 'accepts Calendars.ReadWrite.All like Calendars.ReadWrite, Calendars.Read.All like Calendars.Read (measured in the lab)' {
+        $s = New-TestSettings
+        # The roles of the application of a customer: Calendars.ReadWrite.All instead of Calendars.ReadWrite.
+        $c = Connect-Test $s @('Place.Read.All', 'User.Read.All', 'GroupMember.Read.All', 'Calendars.ReadWrite.All', 'Directory.ReadWrite.All') 'Transfer'
+        $c.CanWrite | Should -BeTrue
+        $c.CanRead | Should -BeTrue
+        $c = Connect-Test $s @('Calendars.Read.All')
+        $c.CanRead | Should -BeTrue
+        $c.CanWrite | Should -BeFalse
+        { Connect-Test $s @('Calendars.Read.All') 'Remove' } | Should -Throw '*Calendars.Read only*'
+    }
+
     It 'sends 20 requests per $batch and never more than 4 for one mailbox' {
         New-TestTenant
         $null = Connect-Test (New-TestSettings)
@@ -495,6 +507,9 @@ Describe 'Backup and restore' {
         ($b.Meetings | Where-Object Subject -eq 'M1 Budget review').Event.subject | Should -Be 'M1 Budget review'
         @(($b.Meetings | Where-Object Subject -eq 'M1 Budget review').Copies).Count | Should -Be 5
         Test-Path (Join-Path $run.Folder 'MeetingCleanup-Organizers.csv') | Should -BeTrue
+        # The Transfers file and tab belong to a Transfer run only.
+        Test-Path (Join-Path $run.Folder 'MeetingCleanup-Transfers.csv') | Should -BeFalse
+        Get-Content (Join-Path $run.Folder 'MeetingCleanup.html') -Raw | Should -Match 'id="data-transfers">\[\]</script>'
         @($run.Result.Meetings | ForEach-Object { $_.Copies } | Where-Object Result -eq 'Removed' | Where-Object { -not $_.ActionUtc }).Count | Should -Be 0
     }
 
@@ -781,6 +796,23 @@ Describe 'Transfer' {
         @($script:Fake.Messages | Where-Object Kind -eq 'Cancellation').Count | Should -Be 0
         Test-Path (Join-Path $t.Folder 'MeetingCleanup-Backup.json') | Should -BeTrue
         (Import-Csv (Join-Path $t.Folder 'MeetingCleanup-Meetings.csv') -Delimiter ';' | Where-Object Subject -like 'D1*').NewOrganizer | Should -Be 'att3@contoso.test'
+        # The Transfers file and tab: one row per meeting, the organizer change at a glance.
+        $row = Import-Csv (Join-Path $t.Folder 'MeetingCleanup-Transfers.csv') -Delimiter ';' | Where-Object Subject -like 'D1*'
+        $row.OldOrganizer | Should -Be 'gone@contoso.test'
+        $row.OldOrganizerState | Should -Be 'Not in the directory'
+        $row.OldOrganizerDetail | Should -Not -BeNullOrEmpty
+        $row.NewOrganizer | Should -Be 'att3@contoso.test'
+        $row.Method | Should -Be 'Re-created'
+        $row.Status | Should -Be 'Transferred'
+        $row.NewMeeting | Should -Be 'Created'
+        $row.NewMeetingId | Should -Be $new[0].iCalUId
+        $row.Invited | Should -Be '1'
+        $row.Rooms | Should -Be '1'
+        $row.OldCopiesRemoved | Should -Be '2'
+        $row.OldCopiesFailed | Should -Be '0'
+        $html = Get-Content (Join-Path $t.Folder 'MeetingCleanup.html') -Raw
+        $html | Should -Match '<script type="application/json" id="data-transfers">\[\{"MeetingId"'
+        $html | Should -Match 'data-tab="transfers"'
     }
 
     It 're-creates a series from now, with its removed and moved occurrences, in one invitation' {
@@ -842,6 +874,11 @@ Describe 'Transfer' {
         $m1.Status | Should -Be 'Transferred'
         $m1.TransferMethod | Should -Be 'Native'
         $m1.NewMeetingId | Should -Not -BeNullOrEmpty
+        $row = Import-Csv (Join-Path $t.Folder 'MeetingCleanup-Transfers.csv') -Delimiter ';' | Where-Object Subject -like 'M1*'
+        $row.Method | Should -Be 'Exchange Online'
+        $row.OldOrganizerState | Should -Be 'Mailbox present'
+        $row.OldOrganizerCopy | Should -Be 'Transferred'
+        $row.NewMeeting | Should -Be 'Transferred'
         $script:Fake.Messages.Count | Should -Be 0
         $script:Fake.Created.Count | Should -Be 0
         (Get-FakeEvents 'att1@contoso.test' $script:Ids.M1)[0].organizer.emailAddress.address | Should -Be 'att3@contoso.test'

@@ -1,9 +1,9 @@
 ---
 title: Meeting Cleanup
 subtitle: User guide
-version: 1.2.2
+version: 1.2.3
 author: Nicolas Fabert
-updated: 2026-10-06
+updated: 2026-10-07
 ---
 
 # Meeting Cleanup — User guide
@@ -34,7 +34,7 @@ file | Results | Chapter 4: where the report is written, exit codes, the usual m
 | Exchange | **Exchange Online** only. |
 | PowerShell | **7.4 or later** (`pwsh`) — a portable zip is enough. With 7.5 and later the window has the Fluent look of Windows 11. |
 | Windows | Windows 10 / 11, Windows Server 2016 to 2025. The window needs a desktop session; the command line runs anywhere (scheduled task, SSH). |
-| Application | An **application registered in Microsoft Entra**, with the application permissions `Calendars.ReadWrite`, `User.Read.All`, `Place.Read.All` and `GroupMember.Read.All` (admin consent) and a **certificate** whose private key is in the certificate store of the account that runs the tool: [developer guide, chapter 5](MeetingCleanup-Guide.md#5-application). |
+| Application | An **application registered in Microsoft Entra**, with the application permissions `Calendars.ReadWrite`, `User.Read.All`, `Place.Read.All` and `GroupMember.Read.All` (admin consent) and a **certificate** whose private key is in the certificate store of the account that runs the tool: [developer guide, chapter 5](MeetingCleanup-Guide.md#5-application). `Calendars.ReadWrite.All` works as well. |
 | Your account | **No Exchange or Entra role** to run a report, Remove, Cancel or a re-creation: the application signs in with its certificate. |
 | *Restore*, native *Transfer* | Module `ExchangeOnlineManagement` 3.2 or later, and a role for the application (or an administrator): [Rights for Restore](MeetingCleanup-Guide.md#rights-for-restore), [Rights for Transfer](MeetingCleanup-Guide.md#rights-for-transfer). |
 | Network | HTTPS to `login.microsoftonline.com` and `graph.microsoft.com`; `outlook.office365.com` for *Restore* and a native *Transfer*. |
@@ -107,7 +107,7 @@ Use the address of the person (any of its aliases), or its X500 address when the
 .\Invoke-MeetingCleanup.ps1 -Organizer john.doe@contoso.com -SearchIn Rooms, AllMailboxes -Action Transfer -NewOrganizer jane.roe@contoso.com
 ```
 
-Jane becomes the organizer of every meeting still to come. When John is still active, Exchange Online moves each meeting (the attendees see nothing); when his account or mailbox is gone, the meeting is re-created by Jane and the attendees receive **one invitation**. How each way works and its rights: [developer guide, Transfer to a new organizer](MeetingCleanup-Guide.md#transfer-to-a-new-organizer).
+Jane becomes the organizer of every meeting still to come. When John is still active, Exchange Online moves each meeting (the attendees see nothing); when his account or mailbox is gone, the meeting is re-created by Jane and the attendees receive **one invitation**. The report opens on its **Transfers** tab: for each meeting, from whom to whom, how, the new meeting and its invitation, what became of the old one. How each way works and its rights: [developer guide, Transfer to a new organizer](MeetingCleanup-Guide.md#transfer-to-a-new-organizer).
 
 ### 2.5 One meeting, or one series, without a message
 
@@ -190,8 +190,8 @@ A series is found when one of its occurrences falls in the period, and is handle
 
 Each run writes a new folder under `reports\`, named after the action and the time (`MeetingCleanup_Remove_20261006-001346`). The console shows it at the end, with the next command to run:
 
-- **`MeetingCleanup.html`** — the report: self-contained, it can be sent alone. Tiles, the search, and the *Meetings*, *Copies* and *Organizers* tabs, searchable and sortable.
-- **`MeetingCleanup-Meetings.csv`**, **`-Copies.csv`**, **`-Organizers.csv`** — the same data, separator `;`, open directly in Excel.
+- **`MeetingCleanup.html`** — the report: self-contained, it can be sent alone. Tiles, the search, and the *Meetings*, *Copies* and *Organizers* tabs, searchable and sortable; after a *Transfer*, the **Transfers** tab first: per meeting, from whom to whom, how (Exchange Online or re-created), the new meeting and what became of the old one.
+- **`MeetingCleanup-Meetings.csv`**, **`-Copies.csv`**, **`-Organizers.csv`** (and **`-Transfers.csv`** after a transfer) — the same data, separator `;`, open directly in Excel.
 - **`MeetingCleanup-Summary.json`** — the whole result, used by `-FromReport` and *Restore*.
 - **`MeetingCleanup-Backup.json`** — Remove, Cancel, Transfer: every meeting in full, written **before** any change.
 
@@ -215,7 +215,7 @@ Each run writes a new folder under `reports\`, named after the action and the ti
 |---|---|
 | `AADSTS700016` · `AADSTS700027` | Application ID not in the tenant · certificate not uploaded to the application, or another one. |
 | *Certificate ... not found* | Import the `.pfx` (not the `.cer`) for the account that runs the tool, in `Cert:\CurrentUser\My` or `LocalMachine\My`. |
-| *no application permission Calendars.ReadWrite* | Permission missing, or admin consent not granted. |
+| *no application permission Calendars.ReadWrite* | Permission missing, or admin consent not granted (`Calendars.ReadWrite.All` counts as well). |
 | A mailbox *could not be read: access denied* | The application is limited to some mailboxes (RBAC for Applications, access policy). |
 | *Confirmation needed: run interactively, or add -Force* | An action without a console (scheduled task): add `-Force`. |
 | *The restore needs the module ExchangeOnlineManagement 3.2 or later* | `Install-Module ExchangeOnlineManagement -Scope CurrentUser -Force`. |

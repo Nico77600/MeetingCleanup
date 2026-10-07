@@ -28,7 +28,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.2
+    Version : 1.2.3
 #>
 #Requires -Version 7.4
 [CmdletBinding()]

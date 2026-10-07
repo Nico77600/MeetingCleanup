@@ -16,7 +16,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.2
+    Version : 1.2.3
 #>
 
 # Section.Key of the configuration file -> key of the settings hashtable.

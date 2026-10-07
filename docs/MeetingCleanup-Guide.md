@@ -1,9 +1,9 @@
 ---
 title: Meeting Cleanup
 subtitle: Developer guide
-version: 1.2.2
+version: 1.2.3
 author: Nicolas Fabert
-updated: 2026-10-06
+updated: 2026-10-07
 ---
 
 # Meeting Cleanup — Developer guide
@@ -224,6 +224,9 @@ The tool signs in as an **application** (no user), with application permissions 
 | `Place.Read.All` | the list of the room mailboxes | rooms only from `Search.Rooms` / `Search.RoomFile` (and from the attendee lists) |
 | `GroupMember.Read.All` | the members of a group invited to a meeting | their copies are not looked up |
 
+> [!NOTE]
+> **`Calendars.ReadWrite.All` works too.** Microsoft Graph documents `Calendars.ReadWrite.All` and `Calendars.Read.All` for the work hours and locations of the users, but Exchange Online accepts them for the events (lab, 2026-10-07: with `Calendars.ReadWrite.All` alone, events read, created and removed; with `Calendars.Read.All` alone, read only). The tool counts them as `Calendars.ReadWrite` and `Calendars.Read`. `Calendars.ReadWrite` remains the permission documented for the events.
+
 1. **Entra admin center** > *App registrations* > *New registration*: name *Meeting Cleanup*, single tenant, no redirect URI.
 2. *API permissions* > *Add a permission* > *Microsoft Graph* > *Application permissions*: the four permissions above, then **Grant admin consent**.
 3. *Certificates & secrets* > *Certificates* > *Upload certificate*: the `.cer` file of a certificate whose private key is on the computer that runs the tool:
@@ -418,6 +421,22 @@ The search and the actions run in the background (a second PowerShell runspace, 
 
 The header gives the action, the period, the tiles (meetings, copies, rooms, done) and the warnings; **Search** says who was searched, where and with which application; the **Meetings**, **Copies** and **Organizers** tabs can be searched and sorted, and a meeting opens its copies.
 
+A *Transfer* report has a fourth tab, **Transfers**, open first: one row per meeting of the transfer, to read the change of organizer at a glance.
+
+![The Transfers tab of a Transfer report](images/report-transfers.png)
+
+| Column | Content |
+|---|---|
+| **From → to** | The old organizer, the state of his mailbox (*Mailbox present*, *Account deleted, mailbox present*, *No mailbox*, *Not in the directory*), and the new organizer. |
+| **Method** | *Exchange Online* (moved, the answers of the attendees kept) or *Re-created* (one invitation from the new organizer, answered again). |
+| **Status** | *Transferred*, *Partial* (an old copy not removed: some attendees may see the meeting twice), *Failed*, *Skipped*. |
+| **New meeting** | *Transferred* (moved) or *Created* (re-created, with the number of attendees and rooms invited), and the end of its iCalUId. |
+| **Old meeting** | What became of the old meeting at the old organizer: *Transferred* (moved), *Cancelled* (an active old organizer whose meeting was re-created), *Kept* or *Mailbox deleted* (a deleted organizer: no cancellation is sent from a deleted account). |
+| **Old copies** | The old copies of the attendees and the rooms removed (re-created), the failures and those left; *updated in place* when Exchange Online moved the meeting. |
+| **Notes** | Why a meeting was not transferred, the occurrences removed or moved in the new series, the new Teams link. |
+
+Filters: status and method. A row opens the meeting and every copy (role *New organizer* for the new meeting). The same rows are in `MeetingCleanup-Transfers.csv`.
+
 | Meeting status | Meaning |
 |---|---|
 | **Found** | Report only. |
@@ -457,6 +476,7 @@ One folder per run, `<FilePrefix>_<Action>_<yyyyMMdd-HHmmss>`:
 | `MeetingCleanup-Meetings.csv` | One row per meeting: ID, subject, organizer, start, series (*Scope* `Occurrences` and their number in rooms mode), organizer copy, copies, status, new organizer and new meeting ID of a transfer. |
 | `MeetingCleanup-Copies.csv` | One row per mailbox (per occurrence in rooms mode, column *Occurrence*): organizer, role, found by, action, result, HTTP status, verified, time of the action, detail, event ID. |
 | `MeetingCleanup-Organizers.csv` | One row per organizer: address typed, name, state (mailbox, no mailbox, not in the directory), meetings, series, copies, and what was done (removed, cancelled, restored, failed). |
+| `MeetingCleanup-Transfers.csv` | *Transfer* only: one row per meeting of the transfer — old organizer and its state, new organizer, method, status, new meeting (result, iCalUId, attendees and rooms invited), old meeting at the old organizer, old copies removed, failed or left, notes (chapter 10). |
 | `MeetingCleanup-Summary.json` | The whole result: for scripts, for `-FromReport` and for *Restore*. |
 | `MeetingCleanup-Backup.json` | Remove, Cancel and Transfer: every meeting in full (a series whole) and the state of each copy, written **before** any change. |
 | `MeetingCleanup.html` | The dashboard, self-contained (it can be sent alone). |
@@ -557,7 +577,7 @@ A link from one guide to the other is written with its GitHub anchor (`MeetingCl
 | `AADSTS700016` · `AADSTS700027` · `AADSTS7000215` | Application ID not in the tenant · certificate not on the application, or another one · wrong secret. |
 | *Certificate ... not found* · *without its private key* | Import the `.pfx` (not the `.cer`) for the account that runs the tool, in `CurrentUser\My` or `LocalMachine\My`. |
 | *Connected to tenant ..., but Tenant.TenantId is ...* | The application belongs to another tenant: nothing was read. |
-| *no application permission Calendars.ReadWrite* | Application permission missing or consent not granted (chapter 5). |
+| *no application permission Calendars.ReadWrite* | Application permission missing or consent not granted (chapter 5). `Calendars.ReadWrite.All` counts as well. |
 | *Calendars.Read only* | The application can report but not remove or cancel. |
 | A mailbox *could not be read: access denied* | RBAC for Applications scope or application access policy (chapter 5). |
 | *No room list* | `Place.Read.All` missing and `Search.Rooms` empty. |
@@ -628,6 +648,7 @@ A lab tenant, Graph v1.0, 2026-10-05 and 06: an organizer, three attendees (one 
 | `accept` / `tentativelyAccept` with `sendResponse = false` on the restored copy | room *Busy* again, the organizer's tracking corrected, **no message** |
 | Tool, *Restore* of a 1.0.0 report (6 copies, deleted organizer) and of a list of 2 organizers (11 copies) | every copy back and verified, rooms *Busy* / *Accepted*, no duplicate, **no message** in any mailbox |
 | Tool, *Remove* of 6 meetings, 3 of them in one room (same subject: the organizer's name), then *Restore* of the middle one only, then of the run | 3 waves 4 s apart; the middle meeting alone back in the room, the two others untouched; then 6 restored, 3 already present, **no message** |
+| Application holding **only** `Calendars.ReadWrite.All` (then only `Calendars.Read.All`), app-only token, 2026-10-07 | `.ReadWrite.All`: events of a user and a room read (200), an event created (201) and removed (204) — the transfer works with it. `.Read.All`: read (200), creation refused (403). Both count as `Calendars.ReadWrite` / `Calendars.Read` (chapter 5) |
 
 <!-- icon: tag -->
 ## Appendix D - Versions

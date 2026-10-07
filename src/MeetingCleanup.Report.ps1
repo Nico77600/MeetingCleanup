@@ -7,6 +7,7 @@
       <prefix>-Organizers.csv one row per organizer: address, state of the mailbox, meetings and copies, results
       <prefix>-Meetings.csv   one row per meeting: subject, organizer, start, series, organizer copy, copies, status
       <prefix>-Copies.csv     one row per mailbox: role, how it was found, action, result, Graph status, verified
+      <prefix>-Transfers.csv  Transfer: one row per meeting: old and new organizer, method, new meeting, old copies
       <prefix>-Summary.json   the whole result, for scripts and for -FromReport (replay, restore)
       <prefix>-Backup.json    Remove, Cancel and Transfer: the meetings and copies as they were, written before any change
       <prefix>.html           self-contained dashboard (templates\Report.template.html)
@@ -15,13 +16,14 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.2
+    Version : 1.2.3
 #>
 
 $script:ReportColumns = [ordered]@{
     Meetings = @('MeetingId', 'Subject', 'Organizer', 'OrganizerName', 'Kind', 'Scope', 'Occurrences', 'StartText', 'EndText', 'NextInPeriod', 'Recurrence', 'Location', 'OrganizerCopy', 'Copies', 'RoomCopies', 'AttendeeCopies', 'NotProcessed', 'Cancelled', 'Selected', 'Status', 'NewOrganizer', 'NewMeetingId', 'TransferMethod', 'Notes')
     Copies   = @('MeetingId', 'MeetingSubject', 'Organizer', 'Mailbox', 'Role', 'Via', 'Occurrence', 'Response', 'ShowAs', 'Cancelled', 'Action', 'Result', 'HttpStatus', 'Verified', 'ActionUtc', 'Detail', 'EventId')
     Organizers = @('Input', 'DisplayName', 'PrimaryAddress', 'State', 'Detail', 'Meetings', 'Series', 'Copies', 'Removed', 'Cancelled', 'Restored', 'Transferred', 'Failed')
+    Transfers  = @('MeetingId', 'Subject', 'StartText', 'Kind', 'Recurrence', 'OldOrganizer', 'OldOrganizerName', 'OldOrganizerState', 'OldOrganizerDetail', 'NewOrganizer', 'Method', 'Status', 'NewMeetingId', 'NewMeeting', 'NewMeetingDetail', 'Invited', 'Rooms', 'OldOrganizerCopy', 'OldCopiesRemoved', 'OldCopiesFailed', 'OldCopiesLeft', 'Selected', 'Notes')
 }
 
 function Format-MclCsvCell {
@@ -65,6 +67,12 @@ function Get-MclOrganizerRows {
     param([Parameter(Mandatory = $true)][pscustomobject]$Result)
     [MeetingCleanupNative.Fast]::OrganizerTable($Result.Organizers, $Result.Meetings).ToObjects()
 }
+
+function Get-MclTransferRows {
+    <# One row per meeting of a transfer: old and new organizer, method, status, new meeting, old copies (compiled). #>
+    param([Parameter(Mandatory = $true)][pscustomobject]$Result)
+    [MeetingCleanupNative.Fast]::TransferTable($Result.Organizers, $Result.Meetings).ToObjects()
+}
 function New-MclRunFolder {
     <# New folder of a run under OutputPath: <Prefix>_<Action>_<yyyyMMdd-HHmmss>. #>
     param([Parameter(Mandatory = $true)][string]$OutputPath, [string]$Prefix = 'MeetingCleanup', [string]$Action = 'Report')
@@ -100,6 +108,8 @@ function Export-MclReport {
     $meetings = [MeetingCleanupNative.Fast]::MeetingTable($Result.Meetings)
     $copies = [MeetingCleanupNative.Fast]::CopyTable($Result.Meetings)
     $organizers = [MeetingCleanupNative.Fast]::OrganizerTable($Result.Organizers, $Result.Meetings)
+    # Transfer: one more table, the organizer change of each meeting (its own CSV and tab of the HTML report).
+    $transfers = if ([string]$Result.Action -eq 'Transfer') { [MeetingCleanupNative.Fast]::TransferTable($Result.Organizers, $Result.Meetings) } else { $null }
     $files = [ordered]@{}
     if ($Formats -contains 'Csv' -and -not $SummaryOnly) {
         $files.Meetings = Join-Path $runPath "$Prefix-Meetings.csv"
@@ -108,6 +118,10 @@ function Export-MclReport {
         [MeetingCleanupNative.Fast]::WriteTableCsv($copies, $script:ReportColumns.Copies, $files.Copies, $Delimiter)
         $files.Organizers = Join-Path $runPath "$Prefix-Organizers.csv"
         [MeetingCleanupNative.Fast]::WriteTableCsv($organizers, $script:ReportColumns.Organizers, $files.Organizers, $Delimiter)
+        if ($transfers) {
+            $files.Transfers = Join-Path $runPath "$Prefix-Transfers.csv"
+            [MeetingCleanupNative.Fast]::WriteTableCsv($transfers, $script:ReportColumns.Transfers, $files.Transfers, $Delimiter)
+        }
     }
     $files.Summary = Join-Path $runPath "$Prefix-Summary.json"
     # RunRemoved (restore: the copies of the source run, also in Meetings) is not written again.
@@ -135,6 +149,7 @@ function Export-MclReport {
         $html = $html.Replace('{{MEETINGS_JSON}}', [MeetingCleanupNative.Fast]::TableJson($meetings))
         $html = $html.Replace('{{COPIES_JSON}}', [MeetingCleanupNative.Fast]::TableJson($copies))
         $html = $html.Replace('{{ORGANIZERS_JSON}}', [MeetingCleanupNative.Fast]::TableJson($organizers))
+        $html = $html.Replace('{{TRANSFERS_JSON}}', $(if ($transfers) { [MeetingCleanupNative.Fast]::TableJson($transfers) } else { '[]' }))
         if ($html -match '\{\{[A-Z_]+\}\}') { throw "Report template marker not replaced: $($Matches[0])" }
         $files.Html = Join-Path $runPath "$Prefix.html"
         [IO.File]::WriteAllText($files.Html, $html, [Text.UTF8Encoding]::new($true))

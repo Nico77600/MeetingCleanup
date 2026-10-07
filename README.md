@@ -78,6 +78,7 @@ A removed copy stays restorable for the retention of deleted items (14 days by d
 - A series is re-created **from now**, in its own time zone, with its occurrences removed or moved; every occurrence to come must find its slot in the new series, otherwise the meeting is not transferred.
 - A failure before the invitation removes the new meeting: nothing has been sent, and the old room copies already removed can be restored.
 - The attendees answer the new invitation; a Teams link is created again by the new organizer.
+- The report of a transfer opens on its **Transfers** tab: for each meeting, from whom to whom, how (Exchange Online or re-created), the new meeting and its invitation, what became of the old meeting and of its copies (`MeetingCleanup-Transfers.csv` too).
 
 ## Reports
 
@@ -93,12 +94,18 @@ A removed copy stays restorable for the retention of deleted items (14 days by d
 </table>
 
 <details>
+<summary><b>Transfers tab</b> &middot; after a transfer: from whom to whom, how, the new meeting, the old one and its copies</summary>
+<br>
+<a href="docs/images/report-transfers.png"><img alt="The Transfers tab of a transfer report: one meeting moved by Exchange Online (answers kept, old copies updated in place), one re-created for a deleted organizer (2 attendees and 1 room invited, 3 old copies removed)" src="docs/images/report-transfers.png"></a>
+</details>
+
+<details>
 <summary><b>A search in progress</b> &middot; the step, the part done and the time left; the window keeps answering</summary>
 <br>
 <a href="docs/images/gui-progress-light.png"><img alt="The window during a search of 1,861 mailboxes: Step 4/6, 67 %, about 20 s left" src="docs/images/gui-progress-light.png"></a>
 </details>
 
-Each run writes `MeetingCleanup-Meetings.csv`, `-Copies.csv`, `-Organizers.csv`, `-Summary.json`, `-Backup.json` (written before any change) and a self-contained HTML report, in a folder of its own.
+Each run writes `MeetingCleanup-Meetings.csv`, `-Copies.csv`, `-Organizers.csv` (and `-Transfers.csv` after a transfer), `-Summary.json`, `-Backup.json` (written before any change) and a self-contained HTML report, in a folder of its own.
 
 ## Requirements
 
@@ -107,7 +114,7 @@ Each run writes `MeetingCleanup-Meetings.csv`, `-Copies.csv`, `-Organizers.csv`,
 | Exchange | **Exchange Online** only |
 | PowerShell | 7.4 or later — a portable zip is enough; 7.5 or later for the Windows 11 look of the window |
 | Windows | Windows 10 / 11 or Windows Server 2016 to 2025; the window needs a desktop session, the command line runs anywhere (scheduled task) |
-| Application | An application registered in Microsoft Entra with the **application** permissions `Calendars.ReadWrite`, `User.Read.All`, `Place.Read.All` and `GroupMember.Read.All` (admin consent), and a **certificate** whose private key is in the Windows store of the account that runs the tool ([developer guide, chapter 5](docs/MeetingCleanup-Guide.md#5-application)) |
+| Application | An application registered in Microsoft Entra with the **application** permissions `Calendars.ReadWrite` (or `Calendars.ReadWrite.All`), `User.Read.All`, `Place.Read.All` and `GroupMember.Read.All` (admin consent), and a **certificate** whose private key is in the Windows store of the account that runs the tool ([developer guide, chapter 5](docs/MeetingCleanup-Guide.md#5-application)) |
 | Account | No Exchange or Entra role to run it: the application signs in |
 | *Restore* | Module `ExchangeOnlineManagement` 3.2+ and the role **Mailbox Import Export** for the application (`Exchange.ManageAsApp`) or an administrator |
 | Native *Transfer* | The same module and a role limited to `Invoke-ChangeMeetingOrganizer`; a re-creation needs nothing more |
@@ -118,7 +125,7 @@ Each run writes `MeetingCleanup-Meetings.csv`, `-Copies.csv`, `-Organizers.csv`,
 Download `MeetingCleanup-<version>.zip` from the [latest release](https://github.com/Nico77600/MeetingCleanup/releases/latest), extract it (for example in `C:\Tools`) and unblock the files (command at the top of this page).
 
 ```powershell
-cd C:\Tools\MeetingCleanup-1.2.2
+cd C:\Tools\MeetingCleanup-1.2.3
 notepad .\config\MeetingCleanup.config.psd1          # tenant, application, certificate thumbprint
 
 .\Invoke-MeetingCleanup.ps1 -Gui                     # the window: search, untick, act, restore

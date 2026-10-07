@@ -152,7 +152,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.2
+    Version : 1.2.3
     Exit codes : 0 = completed, 1 = failed, 2 = finished with warnings (a copy not removed or restored, a mailbox not read...).
     Documentation : docs\MeetingCleanup-UserGuide.html (user guide: prerequisites, everyday commands) and
                     docs\MeetingCleanup-Guide.html (developer guide); sources: docs\*.md

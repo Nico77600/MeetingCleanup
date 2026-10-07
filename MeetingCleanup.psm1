@@ -28,7 +28,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Net.Http
 
-$script:ToolVersion = '1.2.2'
+$script:ToolVersion = '1.2.3'
 $script:ToolRoot = $PSScriptRoot
 $script:LogWriter = $null
 $script:LogPath = $null

@@ -9,11 +9,11 @@
     rendered off screen (RenderTargetBitmap); the report is opened by Microsoft Edge headless.
 
     Writes docs\images\gui-search-light.png, gui-search-dark.png, gui-progress-light.png, gui-done-light.png, gui-restore-light.png,
-    gui-rooms-light.png, gui-transfer-light.png, report-overview.png, report-dark.png. Needs an interactive session (WPF) and Microsoft Edge.
+    gui-rooms-light.png, gui-transfer-light.png, report-overview.png, report-dark.png, report-transfers.png. Needs an interactive session (WPF) and Microsoft Edge.
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.2
+    Version : 1.2.3
 #>
 #Requires -Version 7.4
 [CmdletBinding()]
@@ -194,17 +194,28 @@ $module = Get-Module MeetingCleanup
     $script:GuiAnswers = $null
     $transfer.Controls.Meetings.SelectedIndex = 4
     & $render $transfer (Join-Path $Destination 'gui-transfer-light.png')
+    $transferFolder = $script:Gui.LastFolder
     $transfer.Form.Close()
-    [pscustomobject]@{ Report = (Join-Path $reportFolder 'MeetingCleanup.html'); Done = (Join-Path $doneFolder 'MeetingCleanup.html') }
+    [pscustomobject]@{ Report = (Join-Path $reportFolder 'MeetingCleanup.html'); Done = (Join-Path $doneFolder 'MeetingCleanup.html'); Transfer = (Join-Path $transferFolder 'MeetingCleanup.html') }
 } (Join-Path $root 'tests\MeetingCleanup.FakeGraph.ps1') $Destination $work | Set-Variable reports
 
 # ---- the HTML report, opened by Microsoft Edge headless ------------------------------------------------
 $edge = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $edge) { throw 'Microsoft Edge is needed for the images of the report.' }
-foreach ($shot in @(@{ Html = $reports.Report; Theme = 'light'; File = 'report-overview.png' }, @{ Html = $reports.Done; Theme = 'dark'; File = 'report-dark.png' })) {
+# The Transfer report opens on its Transfers tab: its tables only (scoutFocus=tables).
+foreach ($shot in @(@{ Html = $reports.Report; Theme = 'light'; File = 'report-overview.png' }, @{ Html = $reports.Done; Theme = 'dark'; File = 'report-dark.png' },
+        @{ Html = $reports.Transfer; Theme = 'light'; File = 'report-transfers.png'; Query = '&scoutFocus=tables'; Size = '1360,560' })) {
     $profile = Join-Path $work "edge-$([guid]::NewGuid().ToString('N'))"
-    $url = ([Uri]$shot.Html).AbsoluteUri + "?scoutTheme=$($shot.Theme)"
-    & $edge --headless=new --disable-gpu --hide-scrollbars --user-data-dir="$profile" --window-size=1360,1180 --screenshot="$(Join-Path $Destination $shot.File)" $url 2>&1 | Out-Null
+    $url = ([Uri]$shot.Html).AbsoluteUri + "?scoutTheme=$($shot.Theme)" + $(if ($shot.Query) { $shot.Query } else { '' })
+    $size = if ($shot.Size) { $shot.Size } else { '1360,1180' }
+    $png = Join-Path $Destination $shot.File
+    $before = if (Test-Path -LiteralPath $png) { (Get-Item -LiteralPath $png).LastWriteTimeUtc } else { [datetime]::MinValue }
+    # Edge headless sometimes stays open after writing its screenshot: waited for 60 s at most, then stopped.
+    $p = Start-Process -FilePath $edge -PassThru -WindowStyle Hidden -ArgumentList @('--headless=new', '--disable-gpu', '--hide-scrollbars', "--user-data-dir=`"$profile`"", "--window-size=$size", "--screenshot=`"$png`"", "`"$url`"")
+    if (-not $p.WaitForExit(60000)) {
+        if (-not (Test-Path -LiteralPath $png) -or (Get-Item -LiteralPath $png).LastWriteTimeUtc -le $before) { Write-Warning "Edge did not write $($shot.File) within 60 s." }
+        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+    }
     Start-Sleep -Milliseconds 500
 }
 & $cleanup

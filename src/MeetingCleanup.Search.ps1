@@ -21,7 +21,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.2
+    Version : 1.2.3
 #>
 
 $script:EventSelect = 'id,iCalUId,subject,type,organizer,isOrganizer,start,end,isCancelled,recurrence,responseStatus,showAs'

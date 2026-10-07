@@ -8,7 +8,8 @@
       User.Read.All         the addresses of the organizer, the list of every mailbox
       Place.Read.All        the room mailboxes (places API)
       GroupMember.Read.All  the members of a group invited to a meeting
-    Only Calendars.ReadWrite (or Calendars.Read for a report) is required; without the others the tool says
+    Only Calendars.ReadWrite (or Calendars.Read for a report) is required; Calendars.ReadWrite.All (Calendars.Read.All)
+    counts as well (measured: Exchange Online accepts it for the events). Without the others the tool says
     what it cannot do and goes on.
 
     Token: certificate (client assertion built here, no module needed, recommended) or client secret
@@ -21,7 +22,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.1.0
+    Version : 1.2.3
 #>
 
 $script:GraphRoot = 'https://graph.microsoft.com/v1.0'
@@ -153,19 +154,22 @@ function Connect-MclGraph {
     $connection.Roles = $roles
     $connection.TenantGuid = [string]$claims.tid
     $connection.AppName = [string](Get-MclProperty $claims 'app_displayname')
-    $connection.CanWrite = $roles -contains 'Calendars.ReadWrite'
-    $connection.CanRead = $connection.CanWrite -or $roles -contains 'Calendars.Read'
+    # Calendars.ReadWrite.All and Calendars.Read.All are documented for the work hours and locations of the users, but
+    # Exchange Online accepts them for the events too (lab, 2026-10-07: .ReadWrite.All reads, creates and deletes
+    # events; .Read.All reads them, a creation is refused 403): they count as Calendars.ReadWrite / Calendars.Read.
+    $connection.CanWrite = @($roles | Where-Object { $_ -in 'Calendars.ReadWrite', 'Calendars.ReadWrite.All' }).Count -gt 0
+    $connection.CanRead = $connection.CanWrite -or @($roles | Where-Object { $_ -in 'Calendars.Read', 'Calendars.Read.All' }).Count -gt 0
     $connection.CanReadUsers = @($roles | Where-Object { $_ -in 'User.Read.All', 'User.ReadWrite.All', 'Directory.Read.All', 'Directory.ReadWrite.All' }).Count -gt 0
     $connection.CanReadPlaces = @($roles | Where-Object { $_ -in 'Place.Read.All', 'Place.ReadWrite.All' }).Count -gt 0
     $connection.CanReadGroups = @($roles | Where-Object { $_ -in 'GroupMember.Read.All', 'Group.Read.All', 'Group.ReadWrite.All', 'Directory.Read.All', 'Directory.ReadWrite.All' }).Count -gt 0
     $grant = "Entra admin center > App registrations > $(if ($connection.AppName) { $connection.AppName } else { $Settings.AppId }) > API permissions > Microsoft Graph > Application permissions, then 'Grant admin consent'"
     if (-not $connection.CanRead) {
         $script:Graph = $null
-        throw "The application has no application permission Calendars.ReadWrite with admin consent (roles in the token: $(if ($roles.Count) { $roles -join ', ' } else { 'none' })). $grant."
+        throw "The application has no application permission Calendars.ReadWrite (or Calendars.ReadWrite.All) with admin consent (roles in the token: $(if ($roles.Count) { $roles -join ', ' } else { 'none' })). $grant."
     }
     if ($Action -ne 'Report' -and -not $connection.CanWrite) {
         $script:Graph = $null
-        throw "The application has Calendars.Read only: it can report but not remove or cancel. Add Calendars.ReadWrite ($grant)."
+        throw "The application has Calendars.Read only: it can report but not remove, cancel or transfer. Add Calendars.ReadWrite ($grant)."
     }
     return [pscustomobject]$connection
 }
