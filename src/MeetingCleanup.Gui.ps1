@@ -12,8 +12,11 @@
     meeting selected, and the progress; at the bottom the buttons.
 
     It runs exactly the same engine as the command line (Find-MclMeetings, Invoke-MclCleanup,
-    Export-MclReport): the progress shows the lines of the console. The work happens on the window thread,
-    kept responsive between the Graph calls (Invoke-MclGuiPump); Stop ends it at the next call.
+    Export-MclReport): the progress shows the lines of the console. The work runs in a runspace of its own (the
+    module loaded there when the window opens): the window always answers, its lines come through a queue read
+    every 100 ms (Start-MclGuiWork, Step-MclGuiWork); Stop ends the run at the next call. The progress bar
+    (step, part done, time left) and the taskbar button follow the run (Set-MclGuiProgress). The lists are
+    ListView rows of compiled objects (src\MeetingCleanup.Native.cs), filled at once and sortable.
     Search is read-only and writes a report; the action button removes or cancels the meetings ticked,
     after a confirmation that says exactly what will happen.
 
@@ -24,7 +27,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.0
+    Version : 1.2.2
 #>
 
 $script:Gui = $null
@@ -248,39 +251,61 @@ function Get-MclGuiXaml {
                 <Button x:Name="SelectNone" Content="Untick all" Padding="10,3"/>
               </StackPanel>
             </Grid>
-            <DataGrid x:Name="Meetings" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" HeadersVisibility="Column"
-                      SelectionMode="Single" GridLinesVisibility="None" RowHeaderWidth="0" BorderThickness="0" Background="Transparent" IsReadOnly="True">
-              <DataGrid.Columns>
-                <DataGridTemplateColumn Header="" Width="44">
-                  <DataGridTemplateColumn.CellTemplate>
-                    <DataTemplate>
-                      <CheckBox IsChecked="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanTick}" HorizontalAlignment="Center" MinWidth="0" Padding="0"/>
-                    </DataTemplate>
-                  </DataGridTemplateColumn.CellTemplate>
-                </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Start" Binding="{Binding Start}" Width="112"/>
-                <DataGridTextColumn Header="Subject" Binding="{Binding Subject}" Width="2*" MinWidth="140"/>
-                <DataGridTextColumn Header="Organizer" Binding="{Binding Who}" Width="*" MinWidth="96" Visibility="Collapsed"/>
-                <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="62"/>
-                <DataGridTextColumn Header="Organizer copy" Binding="{Binding OrganizerCopy}" Width="128"/>
-                <DataGridTextColumn Header="Copies" Binding="{Binding CopiesText}" Width="96"/>
-                <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="110"/>
-              </DataGrid.Columns>
-            </DataGrid>
+            <!-- ListView/GridView rather than DataGrid: less layout per row (measured), so the list scrolls with
+                 thousands of meetings. Rows are compiled objects (MeetingCleanupNative.MeetingRow). -->
+            <ListView x:Name="Meetings" Grid.Row="1" SelectionMode="Single" BorderThickness="0" Background="Transparent"
+                      VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Item"
+                      ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+              <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Static GridView.GridViewItemContainerStyleKey}}">
+                  <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                  <Setter Property="Padding" Value="0,1"/>
+                  <Setter Property="MinHeight" Value="30"/>
+                </Style>
+              </ListView.ItemContainerStyle>
+              <ListView.View>
+                <GridView AllowsColumnReorder="False">
+                  <GridViewColumn Width="44">
+                    <GridViewColumn.CellTemplate>
+                      <DataTemplate>
+                        <CheckBox IsChecked="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanTick}" HorizontalAlignment="Center" MinWidth="0" Padding="0"/>
+                      </DataTemplate>
+                    </GridViewColumn.CellTemplate>
+                  </GridViewColumn>
+                  <GridViewColumn Header="Start" DisplayMemberBinding="{Binding Start}" Width="128"/>
+                  <GridViewColumn Header="Subject" DisplayMemberBinding="{Binding Subject}" Width="240"/>
+                  <GridViewColumn Header="Organizer" DisplayMemberBinding="{Binding Who}" Width="0"/>
+                  <GridViewColumn Header="Kind" DisplayMemberBinding="{Binding Kind}" Width="60"/>
+                  <GridViewColumn Header="Organizer copy" DisplayMemberBinding="{Binding OrganizerCopy}" Width="118"/>
+                  <GridViewColumn Header="Copies" DisplayMemberBinding="{Binding CopiesText}" Width="90"/>
+                  <GridViewColumn Header="Status" DisplayMemberBinding="{Binding Status}" Width="100"/>
+                </GridView>
+              </ListView.View>
+            </ListView>
             <TextBlock x:Name="MeetingsEmpty" Grid.Row="1" Margin="4,48,4,0" TextWrapping="Wrap" HorizontalAlignment="Center" FontSize="13" Foreground="{DynamicResource TextFillColorTertiaryBrush}"
                        Text="Type the organizer, choose where to search, then Search. A search changes nothing."/>
             <TextBlock x:Name="CopiesTitle" Grid.Row="2" Margin="0,10,0,6" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="Copies of the meeting selected"/>
-            <DataGrid x:Name="Copies" Grid.Row="3" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" GridLinesVisibility="None" RowHeaderWidth="0"
-                      BorderThickness="0" Background="Transparent" FontSize="12">
-              <DataGrid.Columns>
-                <DataGridTextColumn Header="Mailbox" Binding="{Binding Mailbox}" Width="2*"/>
-                <DataGridTextColumn Header="Role" Binding="{Binding Role}" Width="80"/>
-                <DataGridTextColumn Header="Occurrence" Binding="{Binding Occurrence}" Width="112"/>
-                <DataGridTextColumn Header="Found by" Binding="{Binding Via}" Width="*"/>
-                <DataGridTextColumn Header="Result" Binding="{Binding Result}" Width="105"/>
-                <DataGridTextColumn Header="Detail" Binding="{Binding Detail}" Width="2*"/>
-              </DataGrid.Columns>
-            </DataGrid>
+            <ListView x:Name="Copies" Grid.Row="3" SelectionMode="Single" BorderThickness="0" Background="Transparent" FontSize="12"
+                      VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Item"
+                      ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+              <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Static GridView.GridViewItemContainerStyleKey}}">
+                  <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                  <Setter Property="Padding" Value="0"/>
+                  <Setter Property="MinHeight" Value="26"/>
+                </Style>
+              </ListView.ItemContainerStyle>
+              <ListView.View>
+                <GridView AllowsColumnReorder="False">
+                  <GridViewColumn Header="Mailbox" DisplayMemberBinding="{Binding Mailbox}" Width="220"/>
+                  <GridViewColumn Header="Role" DisplayMemberBinding="{Binding Role}" Width="84"/>
+                  <GridViewColumn Header="Occurrence" DisplayMemberBinding="{Binding Occurrence}" Width="116"/>
+                  <GridViewColumn Header="Found by" DisplayMemberBinding="{Binding Via}" Width="116"/>
+                  <GridViewColumn Header="Result" DisplayMemberBinding="{Binding Result}" Width="106"/>
+                  <GridViewColumn Header="Detail" DisplayMemberBinding="{Binding Detail}" Width="200"/>
+                </GridView>
+              </ListView.View>
+            </ListView>
           </Grid>
         </Border>
         <GridSplitter Grid.Row="1" Height="6" HorizontalAlignment="Stretch" Background="Transparent" ResizeDirection="Rows"/>
@@ -288,24 +313,22 @@ function Get-MclGuiXaml {
           <Grid>
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
               <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
             <Grid>
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
               </Grid.ColumnDefinitions>
-              <TextBlock Text="Progress" Style="{StaticResource MclCardTitle}" Margin="0,0,12,6"/>
-              <Grid Grid.Column="1" x:Name="ProgressPanel" Visibility="Collapsed" Margin="0,2,0,6">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="160"/>
-                  <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <ProgressBar x:Name="ProgressBar" Height="6" Minimum="0" Maximum="1" VerticalAlignment="Center"/>
-                <TextBlock x:Name="ProgressText" Grid.Column="1" Margin="10,0,0,0" FontSize="12" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-              </Grid>
+              <TextBlock Text="Progress" Style="{StaticResource MclCardTitle}" Margin="0,0,14,6"/>
+              <!-- During a run: the step and what it counts, then the part done and the time left (Set-MclGuiProgress). -->
+              <TextBlock x:Name="ProgressText" Grid.Column="1" Margin="0,2,12,6" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+              <TextBlock x:Name="ProgressInfo" Grid.Column="2" Margin="0,2,0,6" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
             </Grid>
-            <ScrollViewer x:Name="LogScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <ProgressBar x:Name="ProgressBar" Grid.Row="1" Height="4" Minimum="0" Maximum="1" Margin="0,0,0,8" Visibility="Collapsed"/>
+            <ScrollViewer x:Name="LogScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
               <ItemsControl x:Name="Log" Margin="0,0,12,0">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
@@ -443,6 +466,8 @@ function Set-MclGuiTheme {
     & $set 'CheckBoxCheckBackgroundFillCheckedPressed', 'CheckBoxCheckBackgroundStrokeCheckedPressed' '#CCB11F4B' '#CCFD8EA1'
     # Row selected in the lists: a soft accent, the text stays readable.
     & $set 'DataGridRowSelectedBackgroundThemeBrush' '#1FB11F4B' '#40FD8EA1'
+    # The mark of the row selected in the lists (Fluent): the accent of the report.
+    & $set 'ListViewItemPillFillBrush' '#B11F4B' '#FD8EA1'
     & $set 'DataGridRowSelectedForegroundThemeBrush' '#242424' '#FFFFFF'
     $r[[Windows.SystemColors]::HighlightBrushKey] = $r['DataGridRowSelectedBackgroundThemeBrush']
     $r[[Windows.SystemColors]::InactiveSelectionHighlightBrushKey] = $r['DataGridRowSelectedBackgroundThemeBrush']
@@ -486,7 +511,7 @@ function New-MclForm {
     foreach ($name in 'Root', 'Header', 'Version', 'SettingsScroll', 'Inputs', 'Organizer', 'LoadOrganizers', 'OrganizerHint', 'Restore', 'StartDate', 'EndDate', 'Subject', 'ScopeOrganizer', 'ScopeRooms',
         'ScopeMailboxes', 'MailboxFile', 'Browse', 'ScopeAll', 'ActionRemove', 'ActionCancel', 'Comment', 'ActionTransfer', 'TransferHint', 'NewOrganizer', 'TransferMethod', 'WhoTitle', 'ModeOrganizers', 'ModeRooms', 'PeriodHint', 'SearchCard', 'ConnectionExpander', 'TenantId', 'AppId', 'AuthMode', 'ThumbPanel',
         'Thumbprint', 'SecretPanel', 'Secret', 'ConfigHint', 'Counts', 'StatusPill', 'Status', 'SelectAll', 'SelectNone', 'Meetings', 'MeetingsEmpty', 'CopiesTitle', 'Copies',
-        'ProgressPanel', 'ProgressBar', 'ProgressText', 'LogScroll', 'Log', 'Actions', 'Search', 'Apply', 'ApplyIcon', 'ApplyText', 'Stop', 'Footer', 'OpenReport', 'OpenFolder', 'Close') {
+        'ProgressBar', 'ProgressText', 'ProgressInfo', 'LogScroll', 'Log', 'Actions', 'Search', 'Apply', 'ApplyIcon', 'ApplyText', 'Stop', 'Footer', 'OpenReport', 'OpenFolder', 'Close') {
         $controls[$name] = $window.FindName($name)
     }
     foreach ($b in 'Search', 'Apply') {
@@ -494,6 +519,8 @@ function New-MclForm {
         else { $controls[$b].SetResourceReference([Windows.Controls.Control]::BackgroundProperty, 'AccentFillColorDefaultBrush'); $controls[$b].Foreground = [Windows.Media.Brushes]::White }
     }
     $controls.Version.Text = "v$($script:ToolVersion)  " + [char]0x00B7 + '  Nicolas Fabert'
+    # The button of the window in the taskbar shows the progress of a run too.
+    $window.TaskbarItemInfo = [Windows.Shell.TaskbarItemInfo]::new()
 
     # Values of the configuration.
     $zone = Get-MclTimeZone $Configuration.TimeZone
@@ -519,21 +546,31 @@ function New-MclForm {
     $controls.ConfigHint.Text = "From $([string](Get-MclProperty $Configuration 'ConfigPath')). Changes here are for this window only."
     $controls.ConnectionExpander.IsExpanded = -not ($Configuration.TenantId -and $Configuration.AppId)
 
-    $meetings = [Collections.ObjectModel.ObservableCollection[object]]::new()
-    $copies = [Collections.ObjectModel.ObservableCollection[object]]::new()
+    # Lists replaced in one go (one refresh), rows compiled (MeetingCleanupNative.MeetingRow / CopyRow).
+    $meetings = [MeetingCleanupNative.BulkCollection]::new()
+    $copies = [MeetingCleanupNative.BulkCollection]::new()
     $items = [Collections.ObjectModel.ObservableCollection[object]]::new()
     $controls.Meetings.ItemsSource = $meetings
     $controls.Copies.ItemsSource = $copies
     $controls.Log.ItemsSource = $items
+    # The channel of the background run (Start-MclGuiWork): its lines, Stop (Cancel), Hold, the log file. Every key
+    # the engine reads is there (a synchronized hashtable throws on a missing key under Set-StrictMode).
+    $shared = [hashtable]::Synchronized(@{ Cancel = $false; Hold = $false; Queue = [Collections.Concurrent.ConcurrentQueue[string[]]]::new(); Log = $null; Sink = $null; Pump = $null })
+    $timer = [Windows.Threading.DispatcherTimer]::new([Windows.Threading.DispatcherPriority]::Background)
+    $timer.Interval = [TimeSpan]::FromMilliseconds(100)
+    $timer.Add_Tick({ Step-MclGuiWork })
     $script:Gui = @{
         Form = $window; Controls = $controls; Configuration = $Configuration.Clone(); Settings = $null; Theme = $look
         Running = $false; Result = $null; Acted = $false; LastReport = $null; LastFolder = $null; LastAction = ''; RestoreSource = $null
         Rows = $meetings; CopyRows = $copies; Items = $items; Lines = [Collections.Generic.List[string]]::new()
+        Shared = $shared; Timer = $timer; Job = $null; Runspace = $null
+        # The progress of the run in course (Set-MclGuiProgress): its step, its start, the part done (-1: none yet).
+        Progress = @{ Active = $false; Step = ''; Started = [datetime]::UtcNow; Fraction = -1.0; Stopping = $false }
         # Attached to Closing only while a run is in progress: closing then stops the run first.
         ClosingGuard = [ComponentModel.CancelEventHandler] {
             param($sender, $e)
             $e.Cancel = $true
-            if ($script:Ui) { $script:Ui.Cancel = $true }
+            if ($script:Gui) { $script:Gui.Shared.Cancel = $true; Set-MclGuiProgress -Stopping }
             Add-MclGuiLine 'Warn' 'A run is in progress: it stops at the next Graph call, then the window can be closed.'
         }
     }
@@ -543,16 +580,22 @@ function New-MclForm {
     $controls.Search.Add_Click({ Invoke-MclGuiSearch })
     $controls.Apply.Add_Click({ Invoke-MclGuiApply })
     $controls.Stop.Add_Click({
-            if ($script:Ui) {
-                $script:Ui.Cancel = $true
-                Add-MclGuiLine 'Warn' $(if ($script:Ui.Hold) { 'Stop requested: the meetings being re-created are finished first (created, sent, old copies removed), then the run stops.' } else { 'Stop requested: the run stops at the next Graph call.' })
+            $g = $script:Gui
+            if ($g -and $g.Running) {
+                $g.Shared.Cancel = $true
+                Set-MclGuiProgress -Stopping
+                Add-MclGuiLine 'Warn' $(if ($g.Shared.Hold) { 'Stop requested: the meetings being re-created are finished first (created, sent, old copies removed), then the run stops.' } else { 'Stop requested: the run stops at the next Graph call.' })
             }
         })
     $controls.SelectAll.Add_Click({ Set-MclGuiSelection $true })
     $controls.SelectNone.Add_Click({ Set-MclGuiSelection $false })
     $controls.Meetings.Add_SelectionChanged({ Update-MclGuiCopies })
-    # A box ticked or unticked in the list: the action button counts again.
-    $controls.Meetings.AddHandler([Windows.Controls.Primitives.ButtonBase]::ClickEvent, [Windows.RoutedEventHandler] { Update-MclGuiState })
+    # A box ticked or unticked in the list: the action button counts again. A column header: the list is sorted.
+    $controls.Meetings.AddHandler([Windows.Controls.Primitives.ButtonBase]::ClickEvent, [Windows.RoutedEventHandler] { param($sender, $e) if ($e.OriginalSource -is [Windows.Controls.GridViewColumnHeader]) { Set-MclGuiSort $sender $e.OriginalSource } else { Update-MclGuiState } })
+    $controls.Copies.AddHandler([Windows.Controls.Primitives.ButtonBase]::ClickEvent, [Windows.RoutedEventHandler] { param($sender, $e) if ($e.OriginalSource -is [Windows.Controls.GridViewColumnHeader]) { Set-MclGuiSort $sender $e.OriginalSource } })
+    # GridView has no proportional width: the subject (the mailbox and the detail of a copy) take the width left.
+    $controls.Meetings.Add_SizeChanged({ Update-MclGuiColumns })
+    $controls.Copies.Add_SizeChanged({ Update-MclGuiColumns })
     $controls.ActionRemove.Add_Checked({ Update-MclGuiState })
     $controls.ActionCancel.Add_Checked({ Update-MclGuiState })
     $controls.ActionTransfer.Add_Checked({ Update-MclGuiState })
@@ -604,7 +647,7 @@ function Update-MclGuiState {
     $c.SecretPanel.Visibility = if ($secret) { 'Visible' } else { 'Collapsed' }
     $c.ThumbPanel.Visibility = if ($secret) { 'Collapsed' } else { 'Visible' }
     $c.MailboxFile.IsEnabled = [bool]$c.ScopeMailboxes.IsChecked
-    $ticked = @($g.Rows | Where-Object Selected).Count
+    $ticked = [MeetingCleanupNative.GuiRows]::CountSelected($g.Rows)
     $c.ApplyIcon.Text = [string][char]$(if ($cancel) { 0xE711 } elseif ($transfer) { 0xE748 } else { 0xE74D })
     $verb = if ($cancel) { 'Cancel' } elseif ($transfer) { 'Transfer' } else { 'Remove' }
     $c.ApplyText.Text = if ($ticked) { "$verb $ticked meeting$(if ($ticked -gt 1) { 's' })" } else { "$verb the meetings ticked" }
@@ -617,8 +660,8 @@ function Set-MclGuiSelection {
     param([bool]$Value)
     $g = $script:Gui
     if (-not $g -or $g.Running -or $g.Acted) { return }
-    foreach ($row in @($g.Rows)) { $row.Selected = $Value }
-    $g.Controls.Meetings.Items.Refresh()
+    # Compiled rows notify their box: no redraw of the whole list.
+    [MeetingCleanupNative.GuiRows]::SetSelected($g.Rows, $Value)
     Update-MclGuiState
 }
 
@@ -626,37 +669,73 @@ function Update-MclGuiCopies {
     <# The copies of the meeting selected in the list. #>
     $g = $script:Gui
     if (-not $g) { return }
-    $g.CopyRows.Clear()
     $row = $g.Controls.Meetings.SelectedItem
-    if (-not $row) { $g.Controls.CopiesTitle.Text = 'Copies of the meeting selected'; return }
-    foreach ($c in @($row.Meeting.Copies)) {
-        $g.CopyRows.Add([pscustomobject]@{ Mailbox = $c.Mailbox; Role = $c.Role; Occurrence = [string](Get-MclProperty $c 'Occurrence'); Via = $c.Via; Result = $(if ($c.Result) { $c.Result } elseif ($c.EventId) { 'Found' } else { '' }); Detail = $c.Detail })
-    }
+    if (-not $row) { $g.CopyRows.ReplaceAll($null); $g.Controls.CopiesTitle.Text = 'Copies of the meeting selected'; return }
+    $g.CopyRows.ReplaceAll([MeetingCleanupNative.GuiRows]::ForCopies($row.Meeting.Copies))
     $g.Controls.CopiesTitle.Text = "Copies of '$($row.Subject)'  $([char]0x00B7)  organizer $($row.Meeting.Organizer)"
     Update-MclGuiState
 }
 
+function Set-MclGuiSort {
+    <# A column header clicked: the list sorted by that column, ascending then descending. #>
+    param($List, $Header)
+    $column = $Header.Column
+    if (-not $column -or -not $column.DisplayMemberBinding) { return }
+    $path = $column.DisplayMemberBinding.Path.Path
+    if ($path -eq 'CopiesText') { $path = 'Copies' }
+    $view = [Windows.Data.CollectionViewSource]::GetDefaultView($List.ItemsSource)
+    $direction = [ComponentModel.ListSortDirection]::Ascending
+    if ($view.SortDescriptions.Count -and $view.SortDescriptions[0].PropertyName -eq $path -and $view.SortDescriptions[0].Direction -eq $direction) { $direction = [ComponentModel.ListSortDirection]::Descending }
+    $view.SortDescriptions.Clear()
+    $view.SortDescriptions.Add([ComponentModel.SortDescription]::new($path, $direction))
+}
+
+function Update-MclGuiColumns {
+    <# GridView has no proportional width: the subject takes the width left (the mailbox and the detail for the copies). #>
+    $g = $script:Gui
+    if (-not $g) { return }
+    $list = $g.Controls.Meetings
+    if ($list.ActualWidth -gt 0) {
+        $fixed = 0.0; $subject = $null; $organizer = $null
+        foreach ($col in $list.View.Columns) {
+            if ($col.Header -eq 'Subject') { $subject = $col } elseif ($col.Header -eq 'Organizer') { $organizer = $col } elseif (-not [double]::IsNaN($col.Width)) { $fixed += $col.Width }
+        }
+        $free = $list.ActualWidth - $fixed - 34
+        # The Organizer column (meetings of several organizers) takes 40 % of the width left.
+        if ($organizer -and $organizer.Width -gt 0) { $organizer.Width = [Math]::Max(90, [Math]::Floor($free * 0.4)); $free -= $organizer.Width }
+        if ($subject) { $subject.Width = [Math]::Max(120, $free) }
+    }
+    $list = $g.Controls.Copies
+    if ($list.ActualWidth -gt 0) {
+        $fixed = 0.0; $wide = [Collections.Generic.List[object]]::new()
+        foreach ($col in $list.View.Columns) { if ($col.Header -in 'Mailbox', 'Detail') { $wide.Add($col) } elseif (-not [double]::IsNaN($col.Width)) { $fixed += $col.Width } }
+        # The mailbox 60 % of the width left, the detail 40 %.
+        $free = [Math]::Max(240, $list.ActualWidth - $fixed - 34)
+        foreach ($col in $wide) { $col.Width = [Math]::Floor($free * $(if ($col.Header -eq 'Mailbox') { 0.6 } else { 0.4 })) }
+    }
+}
 function Add-MclGuiLine {
     <# One line of the progress: icon and colour of its status. 'Progress' updates the progress bar instead. #>
-    param([string]$Status, [string]$Text)
+    param([string]$Status, [string]$Text, [switch]$NoScroll)
 
     $g = $script:Gui
     if (-not $g) { return }
     if ($Status -eq 'Progress') {
-        $fraction = 0.0
-        $parts = $Text.Split('|', 2)
-        if ($parts.Count -eq 2 -and [double]::TryParse($parts[0], [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$fraction)) { $Text = $parts[1] }
-        $g.Controls.ProgressPanel.Visibility = 'Visible'
-        $g.Controls.ProgressBar.Value = $fraction
-        $g.Controls.ProgressText.Text = $Text
-        Invoke-MclGuiPump
+        # fraction|text|time left (Write-MclProgress), cut at the first and the last '|'; the time left may be absent.
+        $fraction = 0.0; $label = $Text; $left = ''
+        $first = $Text.IndexOf('|'); $last = $Text.LastIndexOf('|')
+        if ($first -gt 0 -and [double]::TryParse($Text.Substring(0, $first), [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$fraction)) {
+            if ($last -gt $first) { $label = $Text.Substring($first + 1, $last - $first - 1); $left = $Text.Substring($last + 1) }
+            else { $label = $Text.Substring($first + 1) }
+        }
+        Set-MclGuiProgress -Fraction $fraction -Text $label -Left $left
         return
     }
     $glyphs = @{ Step = 0xE76C; Ok = 0xE73E; Warn = 0xE7BA; Fail = 0xEA39; Info = 0xE946; Skip = 0xE72A }
     $colours = @{ Step = 'MclBrandText'; Ok = 'MclSuccess'; Warn = 'MclCaution'; Fail = 'MclCritical'; Info = 'TextFillColorSecondaryBrush'; Skip = 'TextFillColorTertiaryBrush' }
     $key = if ($glyphs.ContainsKey($Status)) { $Status } else { 'Info' }
     $step = $Status -eq 'Step'
-    if ($step) { $g.Controls.ProgressPanel.Visibility = 'Collapsed' }
+    if ($step) { Set-MclGuiProgress -Step $Text }
     $shown = if ($step) { $Text -replace '^\[(\d+/\d+)\]\s*', '$1   ' } else { $Text }
     $window = $g.Form
     $g.Items.Add([pscustomobject]@{
@@ -670,8 +749,94 @@ function Add-MclGuiLine {
             Time      = (Get-Date).ToString('HH:mm:ss')
         })
     $g.Lines.Add("[$Status] $Text")
-    $g.Controls.LogScroll.ScrollToEnd()
-    Invoke-MclGuiPump
+    if (-not $NoScroll) { $g.Controls.LogScroll.ScrollToEnd() }
+}
+
+function Set-MclGuiProgress {
+    <#
+        The progress bar of the window and its button in the taskbar, during a run:
+          -Start <text>  the run begins: the bar moves (nothing counted yet), the time since the start on the right;
+          -Step <text>   a step begins ('[3/6] Title'): the same, with the step;
+          -Fraction      the part done, its text (1,240/1,858 mailboxes searched) and the time left (Write-MclProgress);
+          -Tick          the timer of the run (Step-MclGuiWork): the time since the start while nothing is counted;
+          -Stopping      Stop requested: the taskbar button turns yellow, 'Stopping...';
+          -Waiting       a question to the administrator (the plan of a transfer or a restore): the bar stops;
+          -Done          the run is over: bar and texts hidden, taskbar button back to normal.
+        The window reads the lines of a run every 100 ms and keeps the last part done only: ten updates a second at
+        most, whatever the volume.
+    #>
+    [CmdletBinding(DefaultParameterSetName = 'Tick')]
+    param(
+        [Parameter(ParameterSetName = 'Start', Mandatory = $true)][string]$Start,
+        [Parameter(ParameterSetName = 'Step', Mandatory = $true)][string]$Step,
+        [Parameter(ParameterSetName = 'Fraction', Mandatory = $true)][double]$Fraction,
+        [Parameter(ParameterSetName = 'Fraction')][AllowEmptyString()][string]$Text,
+        [Parameter(ParameterSetName = 'Fraction')][AllowEmptyString()][string]$Left,
+        [Parameter(ParameterSetName = 'Tick')][switch]$Tick,
+        [Parameter(ParameterSetName = 'Stopping', Mandatory = $true)][switch]$Stopping,
+        [Parameter(ParameterSetName = 'Waiting', Mandatory = $true)][switch]$Waiting,
+        [Parameter(ParameterSetName = 'Done', Mandatory = $true)][switch]$Done
+    )
+
+    $g = $script:Gui
+    if (-not $g) { return }
+    $c = $g.Controls; $p = $g.Progress; $task = $g.Form.TaskbarItemInfo
+    $dot = [char]0x00B7
+    switch ($PSCmdlet.ParameterSetName) {
+        'Start' {
+            $g.Progress = $p = @{ Active = $true; Step = $Start; Started = [datetime]::UtcNow; Fraction = -1.0; Stopping = $false }
+            $c.ProgressBar.Visibility = 'Visible'
+        }
+        'Done' {
+            $p.Active = $false
+            $c.ProgressBar.IsIndeterminate = $false
+            $c.ProgressBar.Visibility = 'Collapsed'
+            $c.ProgressText.Text = ''; $c.ProgressInfo.Text = ''
+            if ($task) { $task.ProgressState = 'None' }
+            return
+        }
+    }
+    if (-not $p.Active) { return }
+    switch ($PSCmdlet.ParameterSetName) {
+        'Step' { $p.Step = 'Step ' + ($Step -replace '^\[(\d+/\d+)\]\s*', ('$1 ' + $dot + ' ')); $p.Fraction = -1.0; $c.ProgressBar.Visibility = 'Visible' }
+        'Stopping' { $p.Stopping = $true }
+        'Waiting' {
+            # -2: nothing moves until the next -Start or -Step.
+            $p.Fraction = -2.0
+            $c.ProgressBar.IsIndeterminate = $false
+            $c.ProgressBar.Visibility = 'Collapsed'
+            $c.ProgressText.Text = 'Waiting for your answer'; $c.ProgressInfo.Text = ''
+            if ($task) { $task.ProgressState = 'None' }
+            return
+        }
+        'Fraction' {
+            $p.Fraction = [Math]::Min(1.0, [Math]::Max(0.0, $Fraction))
+            $c.ProgressBar.IsIndeterminate = $false
+            $c.ProgressBar.Value = $p.Fraction
+            $c.ProgressText.Text = if ($Text) { "$($p.Step)  $dot  $Text" } else { $p.Step }
+            $percent = [string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0:0} %', [Math]::Floor($p.Fraction * 100))
+            $c.ProgressInfo.Text = if ($p.Stopping) { 'Stopping...' } elseif ($Left) { "$percent  $dot  $Left" } else { $percent }
+            if ($task) { $task.ProgressState = $(if ($p.Stopping) { 'Paused' } else { 'Normal' }); $task.ProgressValue = $p.Fraction }
+            return
+        }
+    }
+    if ($p.Fraction -ge 0 -or $p.Fraction -le -2) {
+        # A part is known (the bar stays where it is), or a question is asked; Stop turns the taskbar button yellow.
+        if ($p.Stopping -and $p.Fraction -ge 0) { $c.ProgressInfo.Text = 'Stopping...'; if ($task) { $task.ProgressState = 'Paused' } }
+        return
+    }
+    # Nothing counted yet in this step: the bar moves, the time since the start of the run.
+    if (-not $c.ProgressBar.IsIndeterminate) { $c.ProgressBar.IsIndeterminate = $true }
+    if ($c.ProgressText.Text -ne $p.Step) { $c.ProgressText.Text = $p.Step }
+    $info = if ($p.Stopping) { 'Stopping...' } else {
+        $t = [datetime]::UtcNow - $p.Started
+        if ($t.TotalHours -ge 1) { '{0}:{1:00}:{2:00} elapsed' -f [int][Math]::Floor($t.TotalHours), $t.Minutes, $t.Seconds } else { '{0}:{1:00} elapsed' -f $t.Minutes, $t.Seconds }
+    }
+    if ($c.ProgressInfo.Text -ne $info) { $c.ProgressInfo.Text = $info }
+    if ($task) {
+        $state = if ($p.Stopping) { 'Paused' } else { 'Indeterminate' }
+        if ([string]$task.ProgressState -ne $state) { $task.ProgressState = $state; if ($p.Stopping) { $task.ProgressValue = 1 } }
+    }
 }
 
 function Set-MclGuiStatus {
@@ -704,67 +869,277 @@ function Get-MclGuiSettings {
 }
 
 function Update-MclGuiRows {
-    <# The list of the meetings from the result (after a search or an action). #>
+    <# The list of the meetings from the result (after a search or an action), replaced in one go. #>
     $g = $script:Gui
-    $g.Rows.Clear()
-    foreach ($m in @($g.Result.Meetings)) {
-        # One copy per mailbox: an occurrence is counted once for its mailbox; the new organizer is not a copy.
-        $real = @($m.Copies | Where-Object { $_.EventId -and $_.Role -in 'Organizer', 'Attendee', 'Room' } | Group-Object Mailbox | ForEach-Object { $_.Group[0] })
-        $rooms = @($real | Where-Object Role -eq 'Room').Count
-        $kind = if ((Get-MclProperty $m 'Scope') -eq 'Occurrences') { '{0} occ.' -f $m.Occurrences } else { $m.Kind }
-        $g.Rows.Add([pscustomobject]@{
-                Selected = [bool]$m.Selected; CanTick = -not $g.Acted; Start = $m.StartText; Subject = $m.Subject; Who = $(if ($m.OrganizerName) { $m.OrganizerName } else { $m.Organizer }); Kind = $kind; OrganizerCopy = $m.OrganizerCopy
-                Copies = $real.Count; Rooms = $rooms; CopiesText = $(if ($rooms) { '{0} ({1} room{2})' -f $real.Count, $rooms, $(if ($rooms -gt 1) { 's' }) } else { [string]$real.Count }); Status = $m.Status; Meeting = $m
-            })
-    }
+    $meetings = if ($null -ne $g.Result) { $g.Result.Meetings } else { $null }
+    [Windows.Data.CollectionViewSource]::GetDefaultView($g.Rows).SortDescriptions.Clear()
+    $g.Rows.ReplaceAll([MeetingCleanupNative.GuiRows]::ForMeetings($meetings, [bool]$g.Acted))
     # The Organizer column only when the meetings come from more than one organizer.
-    $several = @($g.Result.Meetings | ForEach-Object { if ($_.OrganizerKey) { $_.OrganizerKey } else { $_.Organizer } } | Select-Object -Unique).Count -gt 1
-    foreach ($column in $g.Controls.Meetings.Columns) { if ($column.Header -eq 'Organizer') { $column.Visibility = if ($several) { 'Visible' } else { 'Collapsed' } } }
+    $several = [MeetingCleanupNative.GuiRows]::OrganizerCount($meetings) -gt 1
+    foreach ($column in $g.Controls.Meetings.View.Columns) { if ($column.Header -eq 'Organizer') { $column.Width = if ($several) { 150 } else { 0 } } }
+    Update-MclGuiColumns
     $g.Controls.MeetingsEmpty.Visibility = if ($g.Rows.Count) { 'Collapsed' } else { 'Visible' }
     if (-not $g.Rows.Count) { $g.Controls.MeetingsEmpty.Text = 'No meeting found: widen the period, check the address, or search in more mailboxes.' }
     if ($g.Rows.Count) { $g.Controls.Meetings.SelectedIndex = 0 }
     Update-MclGuiCopies
     Update-MclGuiState
 }
-
 function Start-MclGuiRun {
+    <# A run starts: buttons disabled, Stop enabled, a closing of the window stops the run first. #>
     param([string]$Text)
     $g = $script:Gui
     $c = $g.Controls
-    $script:Ui = @{ Sink = { param($Status, $Text) Add-MclGuiLine $Status $Text }; Pump = { Invoke-MclGuiPump }; Cancel = $false }
+    $g.Shared.Cancel = $false
+    $g.Shared.Hold = $false
+    $g.Shared.Log = $script:LogWriter
     $g.Running = $true
     $g.Form.add_Closing($g.ClosingGuard)
     foreach ($b in 'Search', 'Apply', 'Restore', 'OpenReport', 'OpenFolder', 'Close', 'SelectAll', 'SelectNone', 'Inputs', 'Meetings') { $c[$b].IsEnabled = $false }
     $c.Stop.IsEnabled = $true
     Set-MclGuiStatus $Text 'Running'
+    Set-MclGuiProgress -Start $Text
 }
 
 function Stop-MclGuiRun {
     $g = $script:Gui
     $c = $g.Controls
     $g.Form.remove_Closing($g.ClosingGuard)
-    $script:Ui = $null
     $g.Running = $false
     foreach ($b in 'Search', 'Restore', 'Close', 'SelectAll', 'SelectNone', 'Inputs', 'Meetings') { $c[$b].IsEnabled = $true }
     $c.Stop.IsEnabled = $false
-    $c.ProgressPanel.Visibility = 'Collapsed'
+    Set-MclGuiProgress -Done
     $c.OpenReport.IsEnabled = [bool]$g.LastReport
     $c.OpenFolder.IsEnabled = [bool]$g.LastFolder
     Update-MclGuiState
 }
 
-function Save-MclGuiReport {
-    param([Parameter(Mandatory = $true)][hashtable]$Settings, [string]$Directory)
+function Set-MclGuiReport {
+    <# The report of the run just done: Open the report / Open the folder, and the footer. #>
+    param($Report)
+    if (-not $Report) { return }
     $g = $script:Gui
+    $g.LastFolder = $Report.Directory
+    $g.LastReport = $Report.Html
+    $g.Controls.Footer.Text = "Report: $($Report.Directory)"
+}
+
+#region Background work ---------------------------------------------------------------------------------------
+# A search or an action of the window runs in a runspace of its own, with the module loaded there: the window
+# keeps answering whatever the volume (thousands of copies to read, compare, write in the report). Its lines go
+# through a queue (Shared.Queue) that the window reads every 100 ms; Stop and Hold go through Shared too.
+
+$script:GuiInline = $false
+$script:GuiWorkScript = @'
+param($Kind, $Arguments, $Shared)
+& (Get-Module MeetingCleanup) { param($Kind, $Arguments, $Shared) Invoke-MclGuiWork -Kind $Kind -Arguments $Arguments -Shared $Shared } $Kind $Arguments $Shared
+'@
+
+function Save-MclRunReport {
+    <# The report of a run of the window (Export-MclReport); returns its folder and its HTML file. #>
+    param([Parameter(Mandatory = $true)][hashtable]$Settings, [Parameter(Mandatory = $true)][pscustomobject]$Result, [string]$Directory)
     Write-MclNextStep 'Report' 'Report'
-    $exportArgs = @{ Result = $g.Result; OutputPath = $Settings.OutputPath; Prefix = $Settings.ReportPrefix; Formats = $Settings.ReportFormats; Delimiter = $Settings.CsvDelimiter }
+    $exportArgs = @{ Result = $Result; OutputPath = $Settings.OutputPath; Prefix = $Settings.ReportPrefix; Formats = $Settings.ReportFormats; Delimiter = $Settings.CsvDelimiter }
     if ($Directory) { $exportArgs.Directory = $Directory }
     $report = Export-MclReport @exportArgs
-    $g.LastFolder = $report.Directory
-    $g.LastReport = Get-MclProperty $report.Files 'Html'
     Write-MclItem Ok "Report: $($report.Directory)" -Icon File
-    $g.Controls.Footer.Text = "Report: $($report.Directory)"
+    return @{ Directory = $report.Directory; Html = Get-MclProperty $report.Files 'Html' }
 }
+
+function Invoke-MclGuiWork {
+    <#
+    .SYNOPSIS
+        One piece of work of the window, in its background runspace (or inline): Search, Cleanup, TransferPlan,
+        Transfer, RestorePlan, Restore. Never throws: returns @{ Ok; Cancelled; Started; Error; Result; Report; ... }.
+    .NOTES
+        Started: the action has begun (Graph connected, something may have changed) - the window then never offers
+        the meetings for an action again.
+    #>
+    param([Parameter(Mandatory = $true)][string]$Kind, [hashtable]$Arguments = @{}, [Parameter(Mandatory = $true)][hashtable]$Shared)
+    $script:Ui = $Shared
+    $script:Quiet = $true
+    if ($Shared.Log -and -not [object]::ReferenceEquals($script:LogWriter, $Shared.Log)) { $script:LogWriter = $Shared.Log }
+    $a = $Arguments
+    $out = @{ Ok = $false; Cancelled = $false; Started = $false; Error = ''; Result = $null; Report = $null }
+    $runPath = $null
+    try {
+        switch ($Kind) {
+            'Search' {
+                Initialize-MclSteps -Total 6
+                Write-MclNextStep 'Microsoft Graph' 'Key'
+                $connection = Connect-MclGraph -Settings $a.Settings -Secret $a.Secret -Action 'Report'
+                Write-MclItem Ok ('Application {0} {1} tenant {2}' -f $(if ($connection.AppName) { $connection.AppName } else { $a.Settings.AppId }), [char]0x00B7, $connection.TenantGuid) -Icon Key
+                if (-not $connection.CanWrite) { Write-MclItem Warn 'Calendars.Read only: the meetings can be listed, not removed or cancelled.' }
+                $out.Result = Find-MclMeetings -Settings $a.Settings -Request $a.Request
+                $out.Report = Save-MclRunReport -Settings $a.Settings -Result $out.Result
+            }
+            'Cleanup' {
+                Initialize-MclSteps -Total (2 + [int][bool]$a.Settings.Verify)
+                $null = Connect-MclGraph -Settings $a.Settings -Secret $a.Secret -Action $a.Action
+                $out.Started = $true
+                $out.Result = $a.Result
+                $runPath = New-MclRunFolder -OutputPath $a.Settings.OutputPath -Prefix $a.Settings.ReportPrefix -Action $a.Action
+                $out.Result = Invoke-MclCleanup -Settings $a.Settings -Result $a.Result -Action $a.Action -Comment $a.Comment -BackupPath (Join-Path $runPath "$($a.Settings.ReportPrefix)-Backup.json")
+                $out.Report = Save-MclRunReport -Settings $a.Settings -Result $out.Result -Directory $runPath
+            }
+            'TransferPlan' {
+                Initialize-MclSteps -Total (3 + [int][bool]$a.Settings.Verify)
+                $null = Connect-MclGraph -Settings $a.Settings -Secret $a.Secret -Action 'Remove'
+                $out.New = Resolve-MclNewOrganizer -Address $a.Address
+                $out.Plan = Get-MclTransferPlan -Result $a.Result -NewOrganizer $out.New -Method $a.Method -Comment $a.Comment
+            }
+            'Transfer' {
+                $out.Started = $true
+                $out.Result = $a.Result
+                $runPath = New-MclRunFolder -OutputPath $a.Settings.OutputPath -Prefix $a.Settings.ReportPrefix -Action 'Transfer'
+                Write-MclNextStep 'Exchange Online PowerShell' 'Server'
+                if ($a.Plan.Native.Count) { Connect-MclExchange -Settings $a.Settings -Secret $a.Secret -For Transfer } else { Write-MclItem Skip 'Not needed: every meeting is re-created with Microsoft Graph.' }
+                try { $out.Result = Invoke-MclTransfer -Settings $a.Settings -Result $a.Result -Plan $a.Plan -Comment $a.Comment -BackupPath (Join-Path $runPath "$($a.Settings.ReportPrefix)-Backup.json") }
+                finally { if ($a.Plan.Native.Count) { Disconnect-MclExchange } }
+                $out.Report = Save-MclRunReport -Settings $a.Settings -Result $out.Result -Directory $runPath
+            }
+            'RestorePlan' {
+                $out.Source = Import-MclRestoreSource -Path $a.Path
+                $out.Plan = Get-MclRestorePlan -Result $out.Source
+            }
+            'Restore' {
+                Initialize-MclSteps -Total 5
+                Write-MclNextStep 'Microsoft Graph' 'Key'
+                $connection = Connect-MclGraph -Settings $a.Settings -Secret $a.Secret -Action 'Remove'
+                if ($a.Source.Tenant -and $a.Source.Tenant -ne $connection.TenantGuid) { throw "The report belongs to tenant $($a.Source.Tenant), the application signs in to $($connection.TenantGuid)." }
+                Write-MclNextStep 'Exchange Online PowerShell' 'Server'
+                Connect-MclExchange -Settings $a.Settings -Secret $a.Secret
+                $out.Started = $true
+                $out.Result = $a.Source
+                try { $out.Result = Invoke-MclRestore -Settings $a.Settings -Result $a.Source }
+                finally { Disconnect-MclExchange }
+                $out.Report = Save-MclRunReport -Settings $a.Settings -Result $out.Result
+            }
+            default { throw "Unknown work of the window: $Kind" }
+        }
+        $out.Ok = $true
+    }
+    catch [OperationCanceledException] {
+        $out.Cancelled = $true
+        # Stopped during an action: what was done is in the report (it can be restored, or finished by a new run).
+        if ($out.Started -and $out.Result) {
+            try {
+                $out.Result.Status = 'Warning'; $out.Result.Error = 'Stopped by the user'
+                Update-MclResultCounts $out.Result
+                $out.Report = Save-MclRunReport -Settings $a.Settings -Result $out.Result -Directory $runPath
+            }
+            catch { Write-MclLog 'WARN' "Report after a stop: $($_.Exception.Message)" }
+        }
+    }
+    catch {
+        $out.Error = $_.Exception.Message
+        Write-MclLog 'ERROR' "Window ($Kind): $($_.Exception.Message)"
+    }
+    finally { $script:Ui = $null }
+    return $out
+}
+
+function Open-MclGuiRunspace {
+    <# The background runspace of the window, opened in the background (module loaded there) when the window opens. #>
+    $g = $script:Gui
+    if ($g.Runspace) { return }
+    $iss = [Management.Automation.Runspaces.InitialSessionState]::CreateDefault2()
+    $iss.ImportPSModule([string[]]@(Join-Path $script:ToolRoot 'MeetingCleanup.psd1'))
+    $runspace = [Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace($iss)
+    # STA: an interactive sign-in of Exchange Online (restore as an administrator) needs it.
+    $runspace.ApartmentState = [Threading.ApartmentState]::STA
+    $runspace.ThreadOptions = [Management.Automation.Runspaces.PSThreadOptions]::ReuseThread
+    $runspace.OpenAsync()
+    $g.Runspace = $runspace
+}
+
+function Get-MclGuiRunspace {
+    <# The background runspace, once open and free (the module is loaded while it is still Busy after Opened). #>
+    $g = $script:Gui
+    if (-not $g.Runspace) { Open-MclGuiRunspace }
+    $until = [datetime]::UtcNow.AddSeconds(90)
+    while (($g.Runspace.RunspaceStateInfo.State -in 'BeforeOpen', 'Opening' -or ($g.Runspace.RunspaceStateInfo.State -eq 'Opened' -and $g.Runspace.RunspaceAvailability -ne 'Available')) -and [datetime]::UtcNow -lt $until) {
+        Invoke-MclGuiPump; Start-Sleep -Milliseconds 30
+    }
+    if ($g.Runspace.RunspaceStateInfo.State -ne 'Opened') { throw "The engine of the window could not start: $($g.Runspace.RunspaceStateInfo.Reason)" }
+    if ($g.Runspace.RunspaceAvailability -ne 'Available') { throw 'The engine of the window is still busy: try again in a moment.' }
+    return $g.Runspace
+}
+
+function Start-MclGuiWork {
+    <#
+        Runs one piece of work (Invoke-MclGuiWork) in the background runspace of the window and returns at once;
+        OnDone runs on the window thread with the outcome and the Context. Inline ($script:GuiInline: the tests and
+        the documentation tool, whose simulated tenant lives in this runspace): the same work, on this thread.
+    #>
+    param([Parameter(Mandatory = $true)][string]$Kind, [hashtable]$Arguments = @{}, [Parameter(Mandatory = $true)][scriptblock]$OnDone, [hashtable]$Context = @{})
+    $g = $script:Gui
+    if ($script:GuiInline) {
+        $outcome = Invoke-MclGuiWork -Kind $Kind -Arguments $Arguments -Shared $g.Shared
+        Receive-MclGuiMessages
+        & $OnDone $outcome $Context
+        return
+    }
+    $ps = [PowerShell]::Create()
+    $ps.Runspace = Get-MclGuiRunspace
+    [void]$ps.AddScript($script:GuiWorkScript).AddArgument($Kind).AddArgument($Arguments).AddArgument($g.Shared)
+    $g.Job = @{ PowerShell = $ps; Handle = $ps.BeginInvoke(); OnDone = $OnDone; Context = $Context; Kind = $Kind }
+    $g.Timer.Start()
+}
+
+function Receive-MclGuiMessages {
+    <# The lines of the background run since the last look: added to the progress; the bar shows the last state. #>
+    $g = $script:Gui
+    $item = $null; $progress = $null; $added = $false
+    while ($g.Shared.Queue.TryDequeue([ref]$item)) {
+        if ($item[0] -eq 'Progress') { $progress = $item[1]; continue }
+        if ($item[0] -eq 'Step') { $progress = $null }
+        Add-MclGuiLine $item[0] $item[1] -NoScroll
+        $added = $true
+    }
+    if ($progress) { Add-MclGuiLine 'Progress' $progress }
+    if ($added) { $g.Controls.LogScroll.ScrollToEnd() }
+}
+
+function Step-MclGuiWork {
+    <# Every 100 ms while a background run is in progress: its lines, then its end (the outcome to OnDone). #>
+    $g = $script:Gui
+    if (-not $g) { return }
+    Receive-MclGuiMessages
+    Set-MclGuiProgress -Tick
+    $job = $g.Job
+    if (-not $job -or -not $job.Handle.IsCompleted) { return }
+    $g.Job = $null
+    $g.Timer.Stop()
+    $outcome = $null
+    try {
+        $output = $job.PowerShell.EndInvoke($job.Handle)
+        if ($output.Count) { $outcome = $output[$output.Count - 1]; if ($null -ne $outcome) { $outcome = $outcome.psobject.BaseObject } }
+        if ($outcome -isnot [hashtable]) {
+            $err = @($job.PowerShell.Streams.Error) | Select-Object -First 1
+            $outcome = @{ Ok = $false; Cancelled = $false; Started = $false; Error = $(if ($err) { [string]$err } else { 'The background run ended without a result.' }); Result = $null; Report = $null }
+        }
+    }
+    catch {
+        $inner = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
+        $outcome = @{ Ok = $false; Cancelled = $false; Started = $false; Error = $inner; Result = $null; Report = $null }
+    }
+    finally { $job.PowerShell.Dispose() }
+    Receive-MclGuiMessages
+    try { & $job.OnDone $outcome $job.Context }
+    catch {
+        Add-MclGuiLine 'Fail' $_.Exception.Message
+        Set-MclGuiStatus 'Failed - see the progress' 'Failed'
+        if ($g.Running -and -not $g.Job) { Stop-MclGuiRun }
+    }
+}
+
+function Wait-MclGuiWork {
+    <# Lab tests and tools: waits (the window answering) until the run of the window is over, with what follows it. #>
+    param([int]$TimeoutSeconds = 3600)
+    $until = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ($script:Gui -and ($script:Gui.Job -or $script:Gui.Running) -and [datetime]::UtcNow -lt $until) { Invoke-MclGuiPump; Start-Sleep -Milliseconds 40 }
+}
+#endregion
 
 function Invoke-MclGuiSearch {
     $g = $script:Gui
@@ -800,34 +1175,37 @@ function Invoke-MclGuiSearch {
     }
 
     $secret = $null
+    if ($cfg.AuthMode -eq 'ClientSecret' -and $c.Secret.SecurePassword.Length) { $secret = $c.Secret.SecurePassword.Copy() }
     Start-MclGuiRun 'Searching...'
+    $g.Result = $null; $g.Acted = $false; $g.LastReport = $null; $g.LastFolder = $null
+    $g.Rows.ReplaceAll($null); $g.CopyRows.ReplaceAll($null)
+    Write-MclLog 'STEP' "Window search: $(if ($rooms) { "rooms $($request.Room -join ', ')" } else { $request.Organizer -join ', ' }) from $($request.Start.ToString('o')) to $($request.End.ToString('o'))$(if (-not $rooms) { " in $($scopes -join ', ')" })"
     try {
-        $g.Result = $null; $g.Acted = $false; $g.LastReport = $null; $g.LastFolder = $null
-        $g.Rows.Clear(); $g.CopyRows.Clear()
-        Write-MclLog 'STEP' "Window search: $(if ($rooms) { "rooms $($request.Room -join ', ')" } else { $request.Organizer -join ', ' }) from $($request.Start.ToString('o')) to $($request.End.ToString('o'))$(if (-not $rooms) { " in $($scopes -join ', ')" })"
-        Initialize-MclSteps -Total 6
-        Write-MclNextStep 'Microsoft Graph' 'Key'
-        if ($cfg.AuthMode -eq 'ClientSecret' -and $c.Secret.SecurePassword.Length) { $secret = $c.Secret.SecurePassword.Copy() }
-        $connection = Connect-MclGraph -Settings $cfg -Secret $secret -Action 'Report'
-        Write-MclItem Ok ('Application {0} {1} tenant {2}' -f $(if ($connection.AppName) { $connection.AppName } else { $cfg.AppId }), [char]0x00B7, $connection.TenantGuid) -Icon Key
-        if (-not $connection.CanWrite) { Write-MclItem Warn 'Calendars.Read only: the meetings can be listed, not removed or cancelled.' }
-        $g.Result = Find-MclMeetings -Settings $cfg -Request $request
-        $g.Settings = $cfg
-        Save-MclGuiReport -Settings $cfg
-        Update-MclGuiRows
-        $n = $g.Result.Counts
-        Set-MclGuiStatus ('{0} meeting(s) {1} {2} copies' -f $n.Meetings, [char]0x00B7, $n.Copies) $g.Result.Status
-        if ($n.Meetings) { Add-MclGuiLine 'Info' 'Nothing has been changed. Untick the meetings to keep, choose the action on the left, then use the action button.' }
-    }
-    catch [OperationCanceledException] {
-        Add-MclGuiLine 'Warn' 'Search stopped: nothing was changed.'
-        Set-MclGuiStatus 'Stopped' 'Warning'
+        Start-MclGuiWork -Kind 'Search' -Arguments @{ Settings = $cfg; Request = $request; Secret = $secret } -Context @{ Settings = $cfg; Secret = $secret } -OnDone {
+            param($outcome, $context)
+            $g = $script:Gui
+            try {
+                if ($outcome.Ok) {
+                    $g.Result = $outcome.Result
+                    $g.Settings = $context.Settings
+                    Set-MclGuiReport $outcome.Report
+                    Update-MclGuiRows
+                    $n = $g.Result.Counts
+                    Set-MclGuiStatus ('{0} meeting(s) {1} {2} copies' -f $n.Meetings, [char]0x00B7, $n.Copies) $g.Result.Status
+                    if ($n.Meetings) { Add-MclGuiLine 'Info' 'Nothing has been changed. Untick the meetings to keep, choose the action on the left, then use the action button.' }
+                }
+                elseif ($outcome.Cancelled) { Add-MclGuiLine 'Warn' 'Search stopped: nothing was changed.'; Set-MclGuiStatus 'Stopped' 'Warning' }
+                else { Add-MclGuiLine 'Fail' $outcome.Error; Set-MclGuiStatus 'Failed - see the progress' 'Failed' }
+            }
+            finally {
+                if ($context.Secret) { $context.Secret.Dispose() }
+                Stop-MclGuiRun
+            }
+        }
     }
     catch {
         Add-MclGuiLine 'Fail' $_.Exception.Message
         Set-MclGuiStatus 'Failed - see the progress' 'Failed'
-    }
-    finally {
         if ($secret) { $secret.Dispose() }
         Stop-MclGuiRun
     }
@@ -844,11 +1222,28 @@ function Show-MclGuiQuestion {
     [Windows.MessageBox]::Show($script:Gui.Form, $Text, $Title, [Windows.MessageBoxButton]$Buttons, [Windows.MessageBoxImage]$Image, [Windows.MessageBoxResult]::No)
 }
 
+function Complete-MclGuiAction {
+    <#
+        End of an action of the window (Remove, Cancel, Transfer, Restore): the result, its report and the list,
+        the status; after a stop, what was done (in the report).
+    #>
+    param([hashtable]$Outcome, [string]$Action, [string]$StoppedText)
+    $g = $script:Gui
+    if ($Outcome.Started) { $g.Acted = $true }
+    if ($Outcome.Result) { $g.Result = $Outcome.Result }
+    Set-MclGuiReport $Outcome.Report
+    if ($Outcome.Ok -or ($Outcome.Cancelled -and $Outcome.Report)) { $g.LastAction = $Action }
+    if ($Outcome.Started -and $g.Result) { try { Update-MclGuiRows } catch { Write-MclLog 'WARN' "Rows after the run: $($_.Exception.Message)" } }
+    if ($Outcome.Cancelled) { Add-MclGuiLine 'Warn' $StoppedText; Set-MclGuiStatus 'Stopped' 'Warning'; return $false }
+    if (-not $Outcome.Ok) { Add-MclGuiLine 'Fail' $Outcome.Error; Set-MclGuiStatus 'Failed - see the progress' 'Failed'; return $false }
+    return $true
+}
+
 function Invoke-MclGuiApply {
     $g = $script:Gui
     $c = $g.Controls
     if ($null -eq $g.Result -or $g.Acted) { return }
-    foreach ($row in @($g.Rows)) { $row.Meeting.Selected = [bool]$row.Selected }
+    [MeetingCleanupNative.GuiRows]::ApplySelection($g.Rows)
     if ($c.ActionTransfer.IsChecked) { Invoke-MclGuiTransfer; return }
     $action = if ($c.ActionCancel.IsChecked) { 'Cancel' } else { 'Remove' }
     $comment = $c.Comment.Text.Trim()
@@ -861,44 +1256,31 @@ function Invoke-MclGuiApply {
     $answer = Show-MclGuiQuestion -Text $text -Image Warning
     if ($answer -ne [Windows.MessageBoxResult]::Yes) { Add-MclGuiLine 'Info' 'Nothing was changed.'; return }
 
+    $cfg = $g.Settings
     $secret = $null
-    $runPath = $null
+    if ($cfg.AuthMode -eq 'ClientSecret' -and $c.Secret.SecurePassword.Length) { $secret = $c.Secret.SecurePassword.Copy() }
     Start-MclGuiRun $(if ($action -eq 'Cancel') { 'Cancelling...' } else { 'Removing...' })
+    Write-MclLog 'INFO' "Confirmed in the window by $([Environment]::UserName): $($plan.Text)"
     try {
-        $cfg = $g.Settings
-        Write-MclLog 'INFO' "Confirmed in the window by $([Environment]::UserName): $($plan.Text)"
-        Initialize-MclSteps -Total (2 + [int][bool]$cfg.Verify)
-        if ($cfg.AuthMode -eq 'ClientSecret' -and $c.Secret.SecurePassword.Length) { $secret = $c.Secret.SecurePassword.Copy() }
-        $null = Connect-MclGraph -Settings $cfg -Secret $secret -Action $action
-        $g.Acted = $true
-        $runPath = New-MclRunFolder -OutputPath $cfg.OutputPath -Prefix $cfg.ReportPrefix -Action $action
-        $g.Result = Invoke-MclCleanup -Settings $cfg -Result $g.Result -Action $action -Comment $comment -BackupPath (Join-Path $runPath "$($cfg.ReportPrefix)-Backup.json")
-        Save-MclGuiReport -Settings $cfg -Directory $runPath
-        $g.LastAction = $action
-        Update-MclGuiRows
-        $n = $g.Result.Counts
-        Set-MclGuiStatus ('{0} {1} {2} removed {1} {3} cancelled {1} {4} failed' -f $g.Result.Status, [char]0x00B7, $n.Removed, $n.Cancelled, $n.Failed) $g.Result.Status
-        Add-MclGuiLine 'Info' $(if ($action -eq 'Remove') { 'Search again to see what is left. To undo it: Restore... (the copies come back, no message).' } else { 'Search again to see what is left, or to clean other meetings.' })
-    }
-    catch [OperationCanceledException] {
-        Add-MclGuiLine 'Warn' 'Stopped: the copies already handled are in the report (they can be restored), the others were left as they were.'
-        Set-MclGuiStatus 'Stopped' 'Warning'
-        if ($null -ne $g.Result -and $runPath) {
+        Start-MclGuiWork -Kind 'Cleanup' -Arguments @{ Settings = $cfg; Secret = $secret; Result = $g.Result; Action = $action; Comment = $comment } -Context @{ Action = $action; Secret = $secret } -OnDone {
+            param($outcome, $context)
+            $g = $script:Gui
             try {
-                $g.Result.Status = 'Warning'; $g.Result.Error = 'Stopped by the user'
-                Update-MclResultCounts $g.Result
-                Save-MclGuiReport -Settings $g.Settings -Directory $runPath
-                $g.LastAction = $action
-                Update-MclGuiRows
+                if (Complete-MclGuiAction $outcome $context.Action 'Stopped: the copies already handled are in the report (they can be restored), the others were left as they were.') {
+                    $n = $g.Result.Counts
+                    Set-MclGuiStatus ('{0} {1} {2} removed {1} {3} cancelled {1} {4} failed' -f $g.Result.Status, [char]0x00B7, $n.Removed, $n.Cancelled, $n.Failed) $g.Result.Status
+                    Add-MclGuiLine 'Info' $(if ($context.Action -eq 'Remove') { 'Search again to see what is left. To undo it: Restore... (the copies come back, no message).' } else { 'Search again to see what is left, or to clean other meetings.' })
+                }
             }
-            catch { Write-MclLog 'WARN' "Report after a stop: $($_.Exception.Message)" }
+            finally {
+                if ($context.Secret) { $context.Secret.Dispose() }
+                Stop-MclGuiRun
+            }
         }
     }
     catch {
         Add-MclGuiLine 'Fail' $_.Exception.Message
         Set-MclGuiStatus 'Failed - see the progress' 'Failed'
-    }
-    finally {
         if ($secret) { $secret.Dispose() }
         Stop-MclGuiRun
     }
@@ -910,47 +1292,56 @@ function Invoke-MclGuiTransfer {
     $c = $g.Controls
     $address = $c.NewOrganizer.Text.Trim()
     if ($address -notmatch $script:SmtpPattern) { Add-MclGuiLine 'Fail' 'Transfer: type the address of the new organizer (a mailbox of the tenant).'; return }
-    $method = [string]$c.TransferMethod.SelectedItem
     $cfg = $g.Settings
     $secret = $null
-    $runPath = $null
-    $plan = $null
+    if ($cfg.AuthMode -eq 'ClientSecret' -and $c.Secret.SecurePassword.Length) { $secret = $c.Secret.SecurePassword.Copy() }
+    $context = @{ Settings = $cfg; Secret = $secret }
     Start-MclGuiRun 'Transferring...'
     try {
-        if ($cfg.AuthMode -eq 'ClientSecret' -and $c.Secret.SecurePassword.Length) { $secret = $c.Secret.SecurePassword.Copy() }
-        Initialize-MclSteps -Total (3 + [int][bool]$cfg.Verify)
-        $null = Connect-MclGraph -Settings $cfg -Secret $secret -Action 'Remove'
-        $new = Resolve-MclNewOrganizer -Address $address
-        $plan = Get-MclTransferPlan -Result $g.Result -NewOrganizer $new -Method $method -Comment ([string]$cfg.TransferComment)
-        if (-not ($plan.Native.Count + $plan.Recreate.Count)) { foreach ($line in $plan.Lines) { Add-MclGuiLine 'Warn' $line }; Set-MclGuiStatus 'Nothing to transfer' 'Warning'; return }
-        $text = "Transfer to $(if ($new.Name) { "$($new.Name) <$($new.Address)>" } else { $new.Address }):`n`n - " + ($plan.Lines -join "`n - ") + "`n`nA backup is written first. Continue?"
-        if ((Show-MclGuiQuestion -Text $text -Title 'Meeting Cleanup - Transfer' -Image Warning) -ne [Windows.MessageBoxResult]::Yes) { Add-MclGuiLine 'Info' 'Nothing was changed.'; return }
-        Write-MclLog 'INFO' "Transfer confirmed in the window by $([Environment]::UserName): $($plan.Text)"
-        $g.Acted = $true
-        $runPath = New-MclRunFolder -OutputPath $cfg.OutputPath -Prefix $cfg.ReportPrefix -Action 'Transfer'
-        Write-MclNextStep 'Exchange Online PowerShell' 'Server'
-        if ($plan.Native.Count) { Connect-MclExchange -Settings $cfg -Secret $secret -For Transfer } else { Write-MclItem Skip 'Not needed: every meeting is re-created with Microsoft Graph.' }
-        try { $g.Result = Invoke-MclTransfer -Settings $cfg -Result $g.Result -Plan $plan -Comment ([string]$cfg.TransferComment) -BackupPath (Join-Path $runPath "$($cfg.ReportPrefix)-Backup.json") }
-        finally { if ($plan.Native.Count) { Disconnect-MclExchange } }
-        Save-MclGuiReport -Settings $cfg -Directory $runPath
-        $g.LastAction = 'Transfer'
-        Update-MclGuiRows
-        $n = $g.Result.Counts
-        Set-MclGuiStatus ('{0} {1} {2} transferred {1} {3} failed' -f $g.Result.Status, [char]0x00B7, $n.Transferred, @($g.Result.Meetings | Where-Object Status -eq 'Failed').Count) $g.Result.Status
-    }
-    catch [OperationCanceledException] {
-        Add-MclGuiLine 'Warn' 'Stopped: the meetings already transferred are in the report.'
-        Set-MclGuiStatus 'Stopped' 'Warning'
-        if ($null -ne $g.Result -and $runPath) {
-            try { $g.Result.Status = 'Warning'; $g.Result.Error = 'Stopped by the user'; Update-MclResultCounts $g.Result; Save-MclGuiReport -Settings $cfg -Directory $runPath; $g.LastAction = 'Transfer'; Update-MclGuiRows }
-            catch { Write-MclLog 'WARN' "Report after a stop: $($_.Exception.Message)" }
+        # 1. the plan (Graph: the new organizer, the meetings), 2. the confirmation, 3. the transfer
+        Start-MclGuiWork -Kind 'TransferPlan' -Arguments @{ Settings = $cfg; Secret = $secret; Result = $g.Result; Address = $address; Method = [string]$c.TransferMethod.SelectedItem; Comment = [string]$cfg.TransferComment } -Context $context -OnDone {
+            param($outcome, $context)
+            $g = $script:Gui
+            $next = $false
+            try {
+                if ($outcome.Cancelled) { Add-MclGuiLine 'Warn' 'Stopped: nothing was changed.'; Set-MclGuiStatus 'Stopped' 'Warning'; return }
+                if (-not $outcome.Ok) { Add-MclGuiLine 'Fail' $outcome.Error; Set-MclGuiStatus 'Failed - see the progress' 'Failed'; return }
+                $plan = $outcome.Plan; $new = $outcome.New
+                if (-not ($plan.Native.Count + $plan.Recreate.Count)) { foreach ($line in $plan.Lines) { Add-MclGuiLine 'Warn' $line }; Set-MclGuiStatus 'Nothing to transfer' 'Warning'; return }
+                $text = "Transfer to $(if ($new.Name) { "$($new.Name) <$($new.Address)>" } else { $new.Address }):`n`n - " + ($plan.Lines -join "`n - ") + "`n`nA backup is written first. Continue?"
+                Set-MclGuiProgress -Waiting
+                if ((Show-MclGuiQuestion -Text $text -Title 'Meeting Cleanup - Transfer' -Image Warning) -ne [Windows.MessageBoxResult]::Yes) { Add-MclGuiLine 'Info' 'Nothing was changed.'; return }
+                Write-MclLog 'INFO' "Transfer confirmed in the window by $([Environment]::UserName): $($plan.Text)"
+                Set-MclGuiProgress -Start 'Transferring...'
+                $next = $true
+                Start-MclGuiWork -Kind 'Transfer' -Arguments @{ Settings = $context.Settings; Secret = $context.Secret; Result = $g.Result; Plan = $plan; Comment = [string]$context.Settings.TransferComment } -Context $context -OnDone {
+                    param($outcome, $context)
+                    $g = $script:Gui
+                    try {
+                        if (Complete-MclGuiAction $outcome 'Transfer' 'Stopped: the meetings already transferred are in the report.') {
+                            $n = $g.Result.Counts
+                            $failed = 0; foreach ($m in $g.Result.Meetings) { if ($m.Status -eq 'Failed') { $failed++ } }
+                            Set-MclGuiStatus ('{0} {1} {2} transferred {1} {3} failed' -f $g.Result.Status, [char]0x00B7, $n.Transferred, $failed) $g.Result.Status
+                        }
+                    }
+                    finally {
+                        if ($context.Secret) { $context.Secret.Dispose() }
+                        Stop-MclGuiRun
+                    }
+                }
+            }
+            catch { $next = $false; Add-MclGuiLine 'Fail' $_.Exception.Message; Set-MclGuiStatus 'Failed - see the progress' 'Failed' }
+            finally {
+                if (-not $next) {
+                    if ($context.Secret) { $context.Secret.Dispose() }
+                    Stop-MclGuiRun
+                }
+            }
         }
     }
     catch {
         Add-MclGuiLine 'Fail' $_.Exception.Message
         Set-MclGuiStatus 'Failed - see the progress' 'Failed'
-    }
-    finally {
         if ($secret) { $secret.Dispose() }
         Stop-MclGuiRun
     }
@@ -1013,7 +1404,7 @@ function Select-MclGuiRestoreFolder {
 }
 
 function Invoke-MclGuiRestore {
-    <# Restore of a Remove run: plan, confirmation, Exchange Online PowerShell, Recoverable Items, check, report. #>
+    <# Restore of a Remove run: the report read, the plan, the confirmation, Exchange Online PowerShell, Recoverable Items, the check, the report. #>
     $g = $script:Gui
     $c = $g.Controls
     $folder = Select-MclGuiRestoreFolder
@@ -1022,59 +1413,64 @@ function Invoke-MclGuiRestore {
     $cfg = if ($g.Settings) { $g.Settings } else { Get-MclGuiSettings }
     $problems = @((Test-MclConfiguration -Configuration $cfg -ForConnection).Problems)
     if ($problems.Count) { foreach ($p in $problems) { Add-MclGuiLine 'Fail' "$p (Connection, at the bottom left)" }; Set-MclGuiStatus 'Fix the connection' 'Failed'; return }
-    try {
-        $source = Import-MclRestoreSource -Path $folder
-        $plan = Get-MclRestorePlan -Result $source
-    }
-    catch { Add-MclGuiLine 'Fail' $_.Exception.Message; Set-MclGuiStatus 'Not a report to restore' 'Failed'; return }
-    if (-not $plan.Restore.Count) {
-        foreach ($line in $plan.Lines) { Add-MclGuiLine 'Info' $line }
-        Add-MclGuiLine 'Warn' 'Nothing to restore in this run.'
-        return
-    }
-    $text = "Restore ($($source.SourceAction) run of $([IO.Path]::GetFileName((Split-Path $source.FromReport -Parent)))):`n`n - " + ($plan.Lines -join "`n - ")
-    $text += "`n`nExchange Online PowerShell: $(if ($cfg.RestoreConnection -eq 'Interactive') { "as an administrator $($cfg.RestoreUser) (sign-in window)" } else { 'as the application (role Mailbox Import Export)' }). Continue?"
-    $answer = Show-MclGuiQuestion -Text $text -Title 'Meeting Cleanup - Restore'
-    if ($answer -ne [Windows.MessageBoxResult]::Yes) { Add-MclGuiLine 'Info' 'Nothing was changed.'; return }
-
     $secret = $null
-    Start-MclGuiRun 'Restoring...'
+    if ($cfg.AuthMode -eq 'ClientSecret' -and $c.Secret.SecurePassword.Length) { $secret = $c.Secret.SecurePassword.Copy() }
+    $context = @{ Settings = $cfg; Secret = $secret; Folder = $folder }
+    Start-MclGuiRun 'Reading the report...'
     try {
-        Write-MclLog 'INFO' "Restore confirmed in the window by $([Environment]::UserName): $folder - $($plan.Text)"
-        Initialize-MclSteps -Total 5
-        Write-MclNextStep 'Microsoft Graph' 'Key'
-        if ($cfg.AuthMode -eq 'ClientSecret' -and $c.Secret.SecurePassword.Length) { $secret = $c.Secret.SecurePassword.Copy() }
-        $connection = Connect-MclGraph -Settings $cfg -Secret $secret -Action 'Remove'
-        if ($source.Tenant -and $source.Tenant -ne $connection.TenantGuid) { throw "The report belongs to tenant $($source.Tenant), the application signs in to $($connection.TenantGuid)." }
-        Write-MclNextStep 'Exchange Online PowerShell' 'Server'
-        Connect-MclExchange -Settings $cfg -Secret $secret
-        # From here the meetings shown are those of the restore: never ticked again for an action, whatever happens.
-        $g.Acted = $true
-        $g.Settings = $cfg
-        $g.LastAction = 'Restore'
-        $g.RestoreSource = $folder
-        $g.Result = $source
-        try { $g.Result = Invoke-MclRestore -Settings $cfg -Result $source }
-        finally { Disconnect-MclExchange }
-        Save-MclGuiReport -Settings $cfg
-        Update-MclGuiRows
-        $n = $g.Result.Counts
-        Set-MclGuiStatus ('{0} {1} {2} restored {1} {3} not found {1} {4} failed' -f $g.Result.Status, [char]0x00B7, $n.Restored, $n.NotFound, $n.Failed) $g.Result.Status
-    }
-    catch [OperationCanceledException] {
-        Add-MclGuiLine 'Warn' 'Stopped: the copies already restored are back; the others are still in Recoverable Items. Restore... again finishes them.'
-        Set-MclGuiStatus 'Stopped' 'Warning'
-        if ($g.Result -and $g.Result.Action -eq 'Restore') {
-            try { $g.Result.Status = 'Warning'; $g.Result.Error = 'Stopped by the user'; Update-MclResultCounts $g.Result; Save-MclGuiReport -Settings $cfg; Update-MclGuiRows }
-            catch { Write-MclLog 'WARN' "Report after a stop: $($_.Exception.Message)" }
+        # 1. the report read and the plan, 2. the confirmation, 3. the restore
+        Start-MclGuiWork -Kind 'RestorePlan' -Arguments @{ Path = $folder } -Context $context -OnDone {
+            param($outcome, $context)
+            $g = $script:Gui
+            $next = $false
+            try {
+                if ($outcome.Cancelled) { Add-MclGuiLine 'Warn' 'Stopped: nothing was changed.'; Set-MclGuiStatus 'Stopped' 'Warning'; return }
+                if (-not $outcome.Ok) { Add-MclGuiLine 'Fail' $outcome.Error; Set-MclGuiStatus 'Not a report to restore' 'Failed'; return }
+                $source = $outcome.Source; $plan = $outcome.Plan; $cfg = $context.Settings
+                if (-not $plan.Restore.Count) {
+                    foreach ($line in $plan.Lines) { Add-MclGuiLine 'Info' $line }
+                    Add-MclGuiLine 'Warn' 'Nothing to restore in this run.'
+                    Set-MclGuiStatus 'Nothing to restore' 'Warning'
+                    return
+                }
+                $text = "Restore ($($source.SourceAction) run of $([IO.Path]::GetFileName((Split-Path $source.FromReport -Parent)))):`n`n - " + ($plan.Lines -join "`n - ")
+                $text += "`n`nExchange Online PowerShell: $(if ($cfg.RestoreConnection -eq 'Interactive') { "as an administrator $($cfg.RestoreUser) (sign-in window)" } else { 'as the application (role Mailbox Import Export)' }). Continue?"
+                Set-MclGuiProgress -Waiting
+                if ((Show-MclGuiQuestion -Text $text -Title 'Meeting Cleanup - Restore') -ne [Windows.MessageBoxResult]::Yes) { Add-MclGuiLine 'Info' 'Nothing was changed.'; Set-MclGuiStatus 'Ready' 'Ready'; return }
+                Write-MclLog 'INFO' "Restore confirmed in the window by $([Environment]::UserName): $($context.Folder) - $($plan.Text)"
+                Set-MclGuiStatus 'Restoring...' 'Running'
+                Set-MclGuiProgress -Start 'Restoring...'
+                $next = $true
+                Start-MclGuiWork -Kind 'Restore' -Arguments @{ Settings = $cfg; Secret = $context.Secret; Source = $source } -Context $context -OnDone {
+                    param($outcome, $context)
+                    $g = $script:Gui
+                    try {
+                        # From the start of the restore, the meetings shown are those of the restore: never ticked
+                        # again for an action; Restore... offers this run again (a stopped restore is finished so).
+                        if ($outcome.Started) { $g.Settings = $context.Settings; $g.LastAction = 'Restore'; $g.RestoreSource = $context.Folder }
+                        if (Complete-MclGuiAction $outcome 'Restore' 'Stopped: the copies already restored are back; the others are still in Recoverable Items. Restore... again finishes them.') {
+                            $n = $g.Result.Counts
+                            Set-MclGuiStatus ('{0} {1} {2} restored {1} {3} not found {1} {4} failed' -f $g.Result.Status, [char]0x00B7, $n.Restored, $n.NotFound, $n.Failed) $g.Result.Status
+                        }
+                    }
+                    finally {
+                        if ($context.Secret) { $context.Secret.Dispose() }
+                        Stop-MclGuiRun
+                    }
+                }
+            }
+            catch { $next = $false; Add-MclGuiLine 'Fail' $_.Exception.Message; Set-MclGuiStatus 'Failed - see the progress' 'Failed' }
+            finally {
+                if (-not $next) {
+                    if ($context.Secret) { $context.Secret.Dispose() }
+                    Stop-MclGuiRun
+                }
+            }
         }
     }
     catch {
         Add-MclGuiLine 'Fail' $_.Exception.Message
         Set-MclGuiStatus 'Failed - see the progress' 'Failed'
-        if ($g.Result -and $g.Result.Action -eq 'Restore') { try { Update-MclGuiRows } catch { Write-MclLog 'WARN' "Rows after a failure: $($_.Exception.Message)" } }
-    }
-    finally {
         if ($secret) { $secret.Dispose() }
         Stop-MclGuiRun
     }
@@ -1090,6 +1486,8 @@ function Show-MclGui {
 
     if (-not $Configuration) { $Configuration = Import-MclConfiguration }
     $window = New-MclForm -Configuration $Configuration
+    # The engine of the window starts loading now, in the background: ready by the first search.
+    Open-MclGuiRunspace
     # Ctrl+C in the console would stop the command that owns the window: the window then could not run any
     # of its PowerShell handlers. Ctrl+C is ignored while the window is open.
     $previousCtrlC = $null
@@ -1103,6 +1501,10 @@ function Show-MclGui {
     finally {
         $script:Quiet = $previousQuiet
         if ($null -ne $previousCtrlC) { try { [Console]::TreatControlCAsInput = $previousCtrlC } catch { } }
+        if ($script:Gui) {
+            $script:Gui.Timer.Stop()
+            if ($script:Gui.Runspace) { try { $script:Gui.Runspace.Dispose() } catch { Write-MclLog 'WARN' "Engine of the window: $($_.Exception.Message)" } }
+        }
         $script:Gui = $null
     }
 }

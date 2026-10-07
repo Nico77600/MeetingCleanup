@@ -1,19 +1,19 @@
 <#
 .SYNOPSIS
-    Renders the images of the guide and the readme: the window (light and dark, after a search, after a
-    cancellation, after a restore, in rooms mode, after a transfer) and the HTML report, from fictitious data.
+    Renders the images of the guide and the readme: the window (light and dark, after a search, during a search,
+    after a cancellation, after a restore, in rooms mode, after a transfer) and the HTML report, from fictitious data.
 
 .DESCRIPTION
     No tenant and no real data: the meetings come from the simulated tenant of the tests
     (tests\MeetingCleanup.FakeGraph.ps1), loaded inside the module, with contoso.com names. The window is
     rendered off screen (RenderTargetBitmap); the report is opened by Microsoft Edge headless.
 
-    Writes docs\images\gui-search-light.png, gui-search-dark.png, gui-done-light.png, gui-restore-light.png,
+    Writes docs\images\gui-search-light.png, gui-search-dark.png, gui-progress-light.png, gui-done-light.png, gui-restore-light.png,
     gui-rooms-light.png, gui-transfer-light.png, report-overview.png, report-dark.png. Needs an interactive session (WPF) and Microsoft Edge.
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.0
+    Version : 1.2.2
 #>
 #Requires -Version 7.4
 [CmdletBinding()]
@@ -32,6 +32,14 @@ $work = if ($ownNeutral) { Join-Path $neutral 'reports' } else { Join-Path $root
 if (-not $ownNeutral -and (Test-Path $work)) { Remove-Item $work -Recurse -Force }
 try { [void][IO.Directory]::CreateDirectory($work) }
 catch { $ownNeutral = $false; $work = Join-Path $root 'artifacts\doc-images'; if (Test-Path $work) { Remove-Item $work -Recurse -Force }; [void][IO.Directory]::CreateDirectory($work) }
+# The neutral folder goes at the end, after a failure too (left behind, the next run would write under artifacts\).
+$cleanup = {
+    if ($ownNeutral) {
+        Start-Sleep -Seconds 1
+        Remove-Item -LiteralPath ($(if ($ownParent) { Split-Path $neutral -Parent } else { $neutral })) -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+trap { & $cleanup; break }
 Import-Module (Join-Path $root 'MeetingCleanup.psd1') -Force
 $module = Get-Module MeetingCleanup
 
@@ -41,6 +49,8 @@ $module = Get-Module MeetingCleanup
     . $FakePath
     function script:Start-MclGraphSend { param($Method, $Url, $Body) [pscustomobject]@{ Task = $null; Request = $null; Response = (Invoke-FakeGraphHttp -Method $Method -Url $Url -Body $Body) } }
     $script:Quiet = $true
+    # The simulated tenant lives in this runspace: the window runs its work here (not in its background runspace).
+    $script:GuiInline = $true
 
     # ---- fictitious tenant: Megan Bowen has left, her mailbox is kept as a shared mailbox ------------------
     $seed = {
@@ -109,24 +119,33 @@ $module = Get-Module MeetingCleanup
     & $render $dark (Join-Path $Destination 'gui-search-dark.png')
     $dark.Form.Close()
 
+    # ---- a search in progress: the lines of a lab run (1,860 rooms), with the names of the images -----------
+    $running = New-MclForm -Configuration $settings -Theme Light
+    $running.Form.WindowStartupLocation = 'Manual'; $running.Form.Left = -4000; $running.Form.ShowInTaskbar = $false; $running.Form.Show()
+    $running.Controls.Organizer.Text = "megan.bowen@$d"
+    $running.Controls.StartDate.SelectedDate = [datetime]"$year-01-01"
+    $running.Controls.EndDate.SelectedDate = [datetime]"$year-03-31"
+    $running.Controls.ConnectionExpander.IsExpanded = $false
+    Start-MclGuiRun 'Searching...'
+    foreach ($line in @(
+            @('Step', '[1/6] Microsoft Graph'), @('Info', 'Access token obtained, valid until 09:42:10 UTC.'), @('Ok', 'Application Meeting Cleanup · tenant contoso.onmicrosoft.com'),
+            @('Step', '[2/6] Organizer'), @('Ok', "Megan Bowen <megan.bowen@$d> · mailbox present · 2 addresses compared"),
+            @('Step', '[3/6] Mailboxes to search'), @('Info', "organizer's calendar: 1 mailbox(es)"), @('Info', 'room mailboxes: 1,860 mailbox(es)'),
+            @('Step', '[4/6] Search'), @('Progress', '0.674|1,254/1,861 mailboxes searched|about 20 s left'))) { Add-MclGuiLine $line[0] $line[1] }
+    & $render $running (Join-Path $Destination 'gui-progress-light.png')
+    Stop-MclGuiRun
+    $running.Form.Close()
+
     # ---- after "Cancel and clean" on three meetings -----------------------------------------------------
     $done = & $search 'Light'
     foreach ($row in @($done.Rows)) { if ($row.Subject -like '1:1*') { $row.Selected = $false } }
     $done.Controls.ActionCancel.IsChecked = $true
     $done.Controls.Comment.Text = 'Megan Bowen has left Contoso: this meeting is cancelled. Contact Alex Wilber for the follow-up.'
-    $g = $script:Gui
-    foreach ($row in @($g.Rows)) { $row.Meeting.Selected = [bool]$row.Selected }
-    Start-MclGuiRun 'Cancelling...'
-    try {
-        Initialize-MclSteps -Total 3
-        $g.Acted = $true
-        $g.Result = Invoke-MclCleanup -Settings $settings -Result $g.Result -Action Cancel -Comment $done.Controls.Comment.Text
-        Save-MclGuiReport -Settings $settings
-        Update-MclGuiRows
-        $n = $g.Result.Counts
-        Set-MclGuiStatus ('{0} {1} {2} removed {1} {3} cancelled {1} {4} failed' -f $g.Result.Status, [char]0x00B7, $n.Removed, $n.Cancelled, $n.Failed) $g.Result.Status
-    }
-    finally { Stop-MclGuiRun }
+    Update-MclGuiState
+    $script:GuiAnswers = [Collections.Generic.Queue[string]]::new()
+    $script:GuiAnswers.Enqueue('Yes')
+    Invoke-MclGuiApply
+    $script:GuiAnswers = $null
     & $render $done (Join-Path $Destination 'gui-done-light.png')
     $doneFolder = $script:Gui.LastFolder
     $done.Form.Close()
@@ -188,8 +207,5 @@ foreach ($shot in @(@{ Html = $reports.Report; Theme = 'light'; File = 'report-o
     & $edge --headless=new --disable-gpu --hide-scrollbars --user-data-dir="$profile" --window-size=1360,1180 --screenshot="$(Join-Path $Destination $shot.File)" $url 2>&1 | Out-Null
     Start-Sleep -Milliseconds 500
 }
-if ($ownNeutral) {
-    Start-Sleep -Seconds 1
-    Remove-Item -LiteralPath ($(if ($ownParent) { Split-Path $neutral -Parent } else { $neutral })) -Recurse -Force -ErrorAction SilentlyContinue
-}
+& $cleanup
 Get-ChildItem -LiteralPath $Destination -Filter '*.png' | Sort-Object Name | ForEach-Object { '{0,10:N0}  {1}' -f $_.Length, $_.Name }

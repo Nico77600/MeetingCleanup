@@ -6,13 +6,13 @@
 </p>
 
 <p align="center">
-  <a href="#why"><b>Why</b></a> &nbsp;&middot;&nbsp;
   <a href="#how-it-works"><b>How it works</b></a> &nbsp;&middot;&nbsp;
   <a href="#the-actions"><b>The actions</b></a> &nbsp;&middot;&nbsp;
   <a href="#transfer-to-a-new-organizer"><b>Transfer</b></a> &nbsp;&middot;&nbsp;
   <a href="#reports"><b>Reports</b></a> &nbsp;&middot;&nbsp;
-  <a href="#user-guide"><b>User guide</b></a> &nbsp;&middot;&nbsp;
-  <a href="#detailed-guide"><b>Detailed guide</b></a>
+  <a href="#quick-start"><b>Quick start</b></a> &nbsp;&middot;&nbsp;
+  <a href="docs/MeetingCleanup-UserGuide.md"><b>User guide</b></a> &nbsp;&middot;&nbsp;
+  <a href="docs/MeetingCleanup-Guide.md"><b>Developer guide</b></a>
 </p>
 
 > [!IMPORTANT]
@@ -46,11 +46,12 @@ This tool does it for **Exchange Online** with one search for every case, a repo
 - **Organizer present or gone**: its calendar when the mailbox exists; the rooms, a list of mailboxes or every mailbox of the tenant when it does not — from the old address or the X500 address of the deleted mailbox. A list of organizers is searched in one pass.
 - **Rooms over a period** (`-Room`, `-RoomFile`): every meeting of the rooms, whatever its organizer. A series is limited to the occurrences the rooms hold in the period; it goes on before and after.
 - **Nothing by surprise**: the report is the default action. Every action shows exactly what it will do and asks to type **YES**; a backup (`Backup.json`) is written before any change; each copy removed is read again to check it is gone. `-FromReport` acts on exactly the meetings of a reviewed report.
+- **Large tenants**: `$batch` requests of Microsoft Graph, 16 in flight; the window runs every search and action in the background and keeps answering, with a progress bar and the time left — about 6,000 mailboxes read in a minute and a half in the lab.
 - **Application permissions of Microsoft Graph** and a certificate: no user account, no module for the search, Remove, Cancel and a re-creation.
 
 ## The actions
 
-Measured on a lab tenant (detailed guide, chapter 4 and appendix C):
+Measured on a lab tenant ([developer guide, chapter 4](docs/MeetingCleanup-Guide.md#4-the-actions) and appendix C):
 
 | Action | Organizer's meeting | Attendees and rooms | Messages |
 |---|---|---|---|
@@ -66,7 +67,7 @@ A removed copy stays restorable for the retention of deleted items (14 days by d
 
 `-Action Transfer -NewOrganizer <address>` gives the meetings found to another person. Two ways, chosen for each meeting (`-TransferMethod Auto`, the default):
 
-- **The old organizer is still active**: Exchange Online moves the meeting (`Invoke-ChangeMeetingOrganizer`); the attendees of the organization are updated silently. It needs Exchange Online PowerShell and a role of its own (detailed guide, chapter 5).
+- **The old organizer is still active**: Exchange Online moves the meeting (`Invoke-ChangeMeetingOrganizer`); the attendees of the organization are updated silently. It needs Exchange Online PowerShell and a role of its own ([developer guide, chapter 5](docs/MeetingCleanup-Guide.md#rights-for-transfer)).
 - **The old mailbox is gone** — deleted, or soft-deleted after the user was removed: no one can cancel or move the meeting any more. The tool **re-creates it in the new organizer's calendar**:
 
 <picture>
@@ -91,97 +92,66 @@ A removed copy stays restorable for the retention of deleted items (14 days by d
   </tr>
 </table>
 
+<details>
+<summary><b>A search in progress</b> &middot; the step, the part done and the time left; the window keeps answering</summary>
+<br>
+<a href="docs/images/gui-progress-light.png"><img alt="The window during a search of 1,861 mailboxes: Step 4/6, 67 %, about 20 s left" src="docs/images/gui-progress-light.png"></a>
+</details>
+
 Each run writes `MeetingCleanup-Meetings.csv`, `-Copies.csv`, `-Organizers.csv`, `-Summary.json`, `-Backup.json` (written before any change) and a self-contained HTML report, in a folder of its own.
 
-## User guide
-
-What you need for daily use. The [detailed guide](#detailed-guide) goes further.
-
-### 1. Prerequisites
+## Requirements
 
 | Item | Requirement |
 |---|---|
-| Workstation | Windows 10 / 11 or Windows Server 2016 to 2025, **PowerShell 7.4** or later (7.5 or later for the Windows 11 look of the window). |
-| Application | An application registered in Microsoft Entra with the **application** permissions `Calendars.ReadWrite`, `User.Read.All`, `Place.Read.All` and `GroupMember.Read.All` (admin consent), and a **certificate** whose private key is in the Windows store of the account that runs the tool. |
-| Network | HTTPS to `login.microsoftonline.com` and `graph.microsoft.com`; `outlook.office365.com` for *Restore* and a native *Transfer*. |
-| *Restore* only | Module `ExchangeOnlineManagement` 3.2+ and the role **Mailbox Import Export** for the application (`Exchange.ManageAsApp`) or an administrator. |
-| Native *Transfer* only | The same module and a role limited to `Invoke-ChangeMeetingOrganizer`. A re-creation needs nothing more. |
+| Exchange | **Exchange Online** only |
+| PowerShell | 7.4 or later — a portable zip is enough; 7.5 or later for the Windows 11 look of the window |
+| Windows | Windows 10 / 11 or Windows Server 2016 to 2025; the window needs a desktop session, the command line runs anywhere (scheduled task) |
+| Application | An application registered in Microsoft Entra with the **application** permissions `Calendars.ReadWrite`, `User.Read.All`, `Place.Read.All` and `GroupMember.Read.All` (admin consent), and a **certificate** whose private key is in the Windows store of the account that runs the tool ([developer guide, chapter 5](docs/MeetingCleanup-Guide.md#5-application)) |
+| Account | No Exchange or Entra role to run it: the application signs in |
+| *Restore* | Module `ExchangeOnlineManagement` 3.2+ and the role **Mailbox Import Export** for the application (`Exchange.ManageAsApp`) or an administrator |
+| Native *Transfer* | The same module and a role limited to `Invoke-ChangeMeetingOrganizer`; a re-creation needs nothing more |
+| Network | HTTPS to `login.microsoftonline.com` and `graph.microsoft.com`; `outlook.office365.com` for *Restore* and a native *Transfer* |
 
-The commands to create the application, the certificate and the roles are in chapter 5 of the detailed guide.
+## Quick start
 
-### 2. Install
-
-1. Download `MeetingCleanup-<version>.zip` from the [latest release](https://github.com/Nico77600/MeetingCleanup/releases/latest) and extract it, for example in `C:\Tools`.
-2. Unblock the files (command at the top of this page).
-3. Open `config\MeetingCleanup.config.psd1` in Notepad and fill in the tenant ID, the application ID and the thumbprint of the certificate.
-
-### 3. Run
-
-**The simplest: the window.**
+Download `MeetingCleanup-<version>.zip` from the [latest release](https://github.com/Nico77600/MeetingCleanup/releases/latest), extract it (for example in `C:\Tools`) and unblock the files (command at the top of this page).
 
 ```powershell
-cd C:\Tools\MeetingCleanup-1.2.0
-.\Invoke-MeetingCleanup.ps1 -Gui
-```
+cd C:\Tools\MeetingCleanup-1.2.2
+notepad .\config\MeetingCleanup.config.psd1          # tenant, application, certificate thumbprint
 
-Type the organizers (or load a list, or choose *Every meeting of rooms*), the period, then **Search**. Untick the meetings to keep, choose the action, then the action button: it shows what will happen and asks to confirm.
+.\Invoke-MeetingCleanup.ps1 -Gui                     # the window: search, untick, act, restore
 
-**From the command line** — always a report first, then the same command with the action:
-
-```powershell
-# What is there? Nothing is changed
+# Or the command line: always a report first (nothing is changed), then the same command with the action
 .\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com
-
-# Megan has left but her mailbox is kept: she cancels her meetings, with a message
 .\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Action Cancel -Comment 'Megan has left the company.'
-
-# John's mailbox is deleted: his meetings are found in the rooms and every mailbox, then removed silently
-.\Invoke-MeetingCleanup.ps1 -Organizer john.doe@contoso.com -SearchIn Rooms, AllMailboxes -Action Remove
-
-# The leavers of the month, one address per line
-.\Invoke-MeetingCleanup.ps1 -OrganizerFile .\leavers.txt
-
-# Two rooms closed for works: every meeting of the period cancelled by its organizer
-.\Invoke-MeetingCleanup.ps1 -Room room-paris-01@contoso.com, room-paris-02@contoso.com -Start 2026-11-02 -End 2026-11-13 -Action Cancel -Comment 'Rooms closed for works.'
-
-# Jane organizes John's meetings from now on
 .\Invoke-MeetingCleanup.ps1 -Organizer john.doe@contoso.com -SearchIn Rooms, AllMailboxes -Action Transfer -NewOrganizer jane.roe@contoso.com
-
-# Act on exactly what was reviewed, then undo a Remove
-.\Invoke-MeetingCleanup.ps1 -FromReport .\reports\MeetingCleanup_Report_20261105-091500 -Action Remove
+.\Invoke-MeetingCleanup.ps1 -Room room-paris-01@contoso.com -Start 2026-11-02 -End 2026-11-13 -Action Cancel -Comment 'Closed for works.'
 .\Invoke-MeetingCleanup.ps1 -Action Restore -FromReport .\reports\MeetingCleanup_Remove_20261105-093000
 ```
 
-Which action?
+One command per everyday question — who still organizes what, a leaver with or without mailbox, a transfer, one series, rooms closed, the leavers of the month, undo a removal: see the [user guide](docs/MeetingCleanup-UserGuide.md).
 
-| You want to... | Action |
+The zip of each [release](https://github.com/Nico77600/MeetingCleanup/releases) contains only the files needed to run, with both guides in HTML; `.\tools\New-MeetingCleanupPackage.ps1` builds the same package from the repository.
+
+## Documentation
+
+| Guide | Content |
 |---|---|
-| see the meetings and every copy of them | *Report* (default) — nothing is changed |
-| clean the calendars of the attendees and free the rooms, without any message | `Remove` |
-| tell the attendees: the organizer cancels, with your message | `Cancel` |
-| keep the meetings with someone else as organizer | `Transfer -NewOrganizer <address>` |
-| undo a `Remove` | `Restore -FromReport <folder of the Remove run>` |
+| **[User guide](docs/MeetingCleanup-UserGuide.md)** | For the people who run the tool: **prerequisites**, the one-time setup and **everyday commands only** — which meetings this person still organizes, a person has left (mailbox kept or deleted), give the meetings to someone else, one series without a message, rooms closed for works, the leavers of the month, undo a removal, the window, the results. |
+| **[Developer guide](docs/MeetingCleanup-Guide.md)** | Everything else: how it works, every case, each action as measured on a lab tenant (Remove, Cancel, rooms mode, Transfer, Restore), the application and the Exchange Online roles, every setting and parameter, the window, the report, the files produced, the architecture, performance and limits, tests, troubleshooting, security. |
 
-### 4. Read the result
+Both guides also exist as a single HTML file with a light and a dark theme (`docs/MeetingCleanup-UserGuide.html`, `docs/MeetingCleanup-Guide.html`): download them and open them locally, or use the copies in the release zip.
 
-- The console shows each step, the meetings found, then a summary card with the next command to run (*Next*).
-- The report is `reports\MeetingCleanup_<action>_<date>\MeetingCleanup.html`: the *Meetings*, *Copies* and *Organizers* tabs; a meeting opens its copies with the result of each one. The CSV and JSON files are next to it.
-- Exit code: `0` completed, `1` failed, `2` warnings.
-
-## Detailed guide
-
-For administrators who set it up, and for developers. The detailed guide covers the cases and where the meetings are found, each action as measured on a lab tenant, the application and the roles, every setting and parameter, the window, the report, the architecture of the module, the performance, the tests and troubleshooting:
-
-- [docs/MeetingCleanup-Guide.md](docs/MeetingCleanup-Guide.md)
-- `docs/MeetingCleanup-Guide.html` — the same guide as a single HTML file, also in the zip of each release
+## Tests
 
 ```powershell
-.\Run-Tests.ps1                              # Pester 6.1+, simulated Exchange Online tenant, no network
-.\tools\New-DocumentationImages.ps1          # window and report images, from fictitious data
-.\tools\Build-Documentation.ps1              # the HTML guide
-.\tools\New-ReadmeImages.ps1                 # the graphics of this page (light and dark)
-.\tools\New-MeetingCleanupPackage.ps1        # the release folder: run-time files and the HTML guide only
+.\Run-Tests.ps1                                  # Pester 6.1+, a simulated Exchange Online tenant, no network
+pwsh -STA -File .\tools\Measure-MeetingCleanup.ps1 -Meetings 600 -Search -Gui   # time of each step, synthetic data
 ```
+
+The tool was also validated on a lab tenant (about 6,000 mailboxes, 1,860 rooms): organizers present, soft-deleted and deleted, lists of organizers, Remove and Restore without any message, Cancel, rooms over a period with series, transfers moved by Exchange Online and re-created for a deleted mailbox ([developer guide, appendix C](docs/MeetingCleanup-Guide.md#appendix-c---lab-measurements)).
 
 ## License
 

@@ -3,6 +3,61 @@
 All notable changes are listed here. Versions follow MAJOR.MINOR.PATCH (see the guide, Appendix D).
 Author: Nicolas Fabert.
 
+## [1.2.2] — 2026-10-06
+
+The progress of a run, at a glance.
+
+### Added
+- **Progress bar of the window**, the whole width of the *Progress* card: the step and what it counts
+  (*Step 4/6 · Search · 1,254/1,861 mailboxes searched*), the part done and the **time left**
+  (*67 % · about 20 s left*). While nothing is counted yet (connection, organizers, report), the bar moves and
+  the time since the start is shown; it stops during a question (plan of a transfer or a restore).
+- **Taskbar**: the button of the window shows the same progress (green), yellow once *Stop* is requested.
+- **Time left in the console** too, at the end of the progress line. It is told from the speed of the
+  progress in course, once it has run 2 s and 2 %, rounded as a person would say it.
+- Window: at most ten updates a second whatever the volume (the queue of the run is read every 100 ms, the last
+  part done only); the moving bar costs about 4 % of one processor core.
+- **User guide** (`docs\MeetingCleanup-UserGuide.md` and `.html`): the prerequisites and one command per everyday
+  question. The guide becomes the **developer guide**; both are in the package, and the links between them work
+  on GitHub and in the HTML files.
+
+## [1.2.1] — 2026-10-06
+
+Performance: the window no longer stops responding on a large search, and a long list scrolls freely. Same
+behaviour, same files, same configuration.
+
+### Changed
+- **Searches and actions run in the background** (window): *Search*, *Remove*, *Cancel*, *Transfer* and
+  *Restore* run in a second PowerShell runspace opened with the window; the progress, the list and the buttons
+  stay live, and *Stop* answers at once. The plans (Transfer, Restore) are built in the background as well,
+  then confirmed in the window. Lab: 1,858 room mailboxes searched, the window never waited more than 163 ms.
+- **Compiled engine** (`src\MeetingCleanup.Native.cs`, built by PowerShell when the module loads, no
+  dependency): the meeting and copy objects, the filter of each mailbox's events, the totals, the recurrence
+  text, the dates and the CSV / JSON files of the report. The loops of the search (copies, attendees, series)
+  and of the plan, the backup and the removal no longer use the pipeline.
+- **Lists of the window**: ListView rows of compiled objects instead of DataGrids (lighter rows), filled at
+  once, sortable by a click on a column header.
+- Measured on 600 meetings and 4,200 copies (`tools\Measure-MeetingCleanup.ps1`, both versions on the same
+  computer, one after the other):
+
+  | Step | 1.2.0 | 1.2.1 |
+  |---|---|---|
+  | Objects built from the Graph answers | 3.9 s | 1.1 s |
+  | Totals | 1.3 s | 0.05 s |
+  | Plan of a Remove | 0.9 s | 0.2 s |
+  | Report (CSV, JSON, HTML) | 8.5 s | 1.0 s |
+  | List filled (600 meetings) | 0.7 s | 0.25 s |
+  | List scrolled top to bottom | 7.0 s | 4.1 to 5.0 s |
+  | *Tick all* | 0.23 s | 0.02 to 0.06 s |
+  | Module loaded (the C# part is compiled then) | 0.3 s | 1 to 1.6 s |
+
+  On a busy computer the gaps grow (report 13.6 s → 2.3 s, list scrolled 24.7 s → 8.5 s). Above all, the
+  window thread does none of this work any more.
+
+### Added
+- `tools\Measure-MeetingCleanup.ps1`: measures the steps above on synthetic data, without a tenant
+  (`-Search`: a whole search on the simulated tenant of the tests; `-Gui`: the window).
+
 ## [1.2.0] — 2026-10-06
 
 Rooms over a period, and the transfer of meetings to a new organizer.

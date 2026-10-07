@@ -27,11 +27,11 @@
                attendees receive one invitation from him); -TransferMethod Auto, Native or Recreate.
       Restore  with -FromReport <report of a Remove, Cancel or Transfer run>: the copies removed come back from
                Recoverable Items (retention of deleted items, 14 days by default), then are answered again
-               silently. Needs Exchange Online PowerShell and the role Mailbox Import Export (guide, chapter 5).
+               silently. Needs Exchange Online PowerShell and the role Mailbox Import Export (developer guide, chapter 5).
     Remove, Cancel and Transfer write a backup of the meetings first, show what they will do and ask to type YES
     (-Force skips it). -FromReport replays the meetings of a reviewed report, without searching again.
 
-    Microsoft Graph, application permissions (guide, chapter 5). Writes CSV, JSON and HTML report files in a
+    Microsoft Graph, application permissions (user guide, chapter 1). Writes CSV, JSON and HTML report files in a
     new folder, and a daily log file. Everything is set in config\MeetingCleanup.config.psd1; the parameters
     below override it.
 
@@ -152,9 +152,10 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.0
+    Version : 1.2.2
     Exit codes : 0 = completed, 1 = failed, 2 = finished with warnings (a copy not removed or restored, a mailbox not read...).
-    Documentation : docs\MeetingCleanup-Guide.html (source: docs\MeetingCleanup-Guide.md)
+    Documentation : docs\MeetingCleanup-UserGuide.html (user guide: prerequisites, everyday commands) and
+                    docs\MeetingCleanup-Guide.html (developer guide); sources: docs\*.md
 #>
 #Requires -Version 7.4
 [CmdletBinding()]

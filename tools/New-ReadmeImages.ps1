@@ -30,7 +30,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.0  (from EAS OAuth Mailbox 1.2.1)
+    Version : 1.2.2  (from EAS OAuth Mailbox 1.2.1)
     Part of : Meeting Cleanup (repository tool, not in the package)
 #>
 [CmdletBinding()]

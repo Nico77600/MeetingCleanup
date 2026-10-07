@@ -55,7 +55,7 @@ function Get-MclCertificate {
             return $cert
         }
     }
-    throw "Certificate $thumb not found in Cert:\CurrentUser\My nor Cert:\LocalMachine\My (account $([Environment]::UserName)). Guide, chapter 'Application'."
+    throw "Certificate $thumb not found in Cert:\CurrentUser\My nor Cert:\LocalMachine\My (account $([Environment]::UserName)). Developer guide, chapter 5 'Application'."
 }
 
 function New-MclClientAssertion {

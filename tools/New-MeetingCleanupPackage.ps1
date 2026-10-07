@@ -3,11 +3,13 @@
     Copies the files needed to run Meeting Cleanup into a separate folder, ready to be zipped.
 
 .DESCRIPTION
-    The package contains only what Invoke-MeetingCleanup.ps1 needs at run time, plus the HTML guide:
+    The package contains only what Invoke-MeetingCleanup.ps1 needs at run time, plus the HTML guides:
         Invoke-MeetingCleanup.ps1, MeetingCleanup.psd1, MeetingCleanup.psm1, src\, config\, templates\,
-        docs\MeetingCleanup-Guide.html, README.md, CHANGELOG.md, LICENSE, THIRD-PARTY-NOTICES.md
-    The HTML guide is rebuilt first from docs\MeetingCleanup-Guide.md (tools\Build-Documentation.ps1): it is
-    self-contained (images inline), so the Markdown source and the images are not copied.
+        docs\MeetingCleanup-UserGuide.html, docs\MeetingCleanup-Guide.html, README.md, CHANGELOG.md, LICENSE,
+        THIRD-PARTY-NOTICES.md
+    The HTML guides (user guide, developer guide) are rebuilt first from their Markdown source
+    (tools\Build-Documentation.ps1): they are self-contained (images inline), so the Markdown sources and the
+    images are not copied.
     It never copies reports\, logs\, artifacts\, tests\ (with the simulated tenant) or tools\.
 
     The configuration is copied as delivered (empty tenant and application). The script checks the content
@@ -26,7 +28,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.1.0
+    Version : 1.2.2
 #>
 #Requires -Version 7.4
 [CmdletBinding()]
@@ -53,14 +55,14 @@ if (Test-Path -LiteralPath $Destination) {
     Remove-Item -LiteralPath $Destination -Recurse -Force
 }
 
-# ---- HTML guide, rebuilt from the Markdown source -------------------------------------------------
+# ---- HTML guides, rebuilt from the Markdown sources ------------------------------------------------
 & (Join-Path $PSScriptRoot 'Build-Documentation.ps1') | Out-Null
 
 # ---- Files needed at run time -------------------------------------------------------------------
 $files = [Collections.Generic.List[string]]::new()
 foreach ($f in 'Invoke-MeetingCleanup.ps1', 'MeetingCleanup.psd1', 'MeetingCleanup.psm1', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md',
-    'config\MeetingCleanup.config.psd1', 'templates\Report.template.html', 'docs\MeetingCleanup-Guide.html') { $files.Add($f) }
-Get-ChildItem -LiteralPath (Join-Path $root 'src') -Filter '*.ps1' -File | ForEach-Object { $files.Add("src\$($_.Name)") }
+    'config\MeetingCleanup.config.psd1', 'templates\Report.template.html', 'docs\MeetingCleanup-UserGuide.html', 'docs\MeetingCleanup-Guide.html') { $files.Add($f) }
+Get-ChildItem -LiteralPath (Join-Path $root 'src') -File | Where-Object Extension -in '.ps1', '.cs' | ForEach-Object { $files.Add("src\$($_.Name)") }
 foreach ($f in $files) {
     $source = Join-Path $root $f
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing file in the tool folder: $f" }
@@ -76,8 +78,11 @@ foreach ($name in 'reports', 'logs', 'tests', 'artifacts', 'tools', 'docs\images
 }
 Get-ChildItem -LiteralPath $Destination -Recurse -File -Include '*.log', '*.csv', '*.json', '*.png', '*.Tests.ps1', '*FakeGraph*' |
     ForEach-Object { $problems.Add("Not a run-time file: $($_.Name)") }
-foreach ($part in 'Console', 'Config', 'Graph', 'Search', 'Cleanup', 'Restore', 'Report', 'Gui') {
-    if (-not (Test-Path -LiteralPath (Join-Path $Destination "src\MeetingCleanup.$part.ps1"))) { $problems.Add("Missing in the package: src\MeetingCleanup.$part.ps1") }
+foreach ($part in 'Console.ps1', 'Config.ps1', 'Graph.ps1', 'Search.ps1', 'Cleanup.ps1', 'Restore.ps1', 'Transfer.ps1', 'Report.ps1', 'Gui.ps1', 'Native.cs') {
+    if (-not (Test-Path -LiteralPath (Join-Path $Destination "src\MeetingCleanup.$part"))) { $problems.Add("Missing in the package: src\MeetingCleanup.$part") }
+}
+foreach ($guide in 'MeetingCleanup-UserGuide.html', 'MeetingCleanup-Guide.html') {
+    if (-not (Test-Path -LiteralPath (Join-Path $Destination "docs\$guide"))) { $problems.Add("Missing in the package: docs\$guide") }
 }
 $config = Import-PowerShellDataFile -LiteralPath (Join-Path $Destination 'config\MeetingCleanup.config.psd1')
 if ($config.Tenant.TenantId -or $config.Authentication.AppId -or $config.Authentication.CertificateThumbprint -or $config.Restore.UserPrincipalName) { $problems.Add('The configuration of the package must not hold a tenant, an application, a certificate or an administrator.') }
@@ -93,6 +98,6 @@ Write-Host "  Meeting Cleanup $version - package ready" -ForegroundColor Green
 Write-Host "  Folder   : $Destination"
 Write-Host ("  Content  : {0} files, {1:N1} MB" -f $all.Count, (($all | Measure-Object Length -Sum).Sum / 1MB))
 Write-Host "  Check    : module loads ($($loaded[0]) commands), reports written under the package folder"
-Write-Host "  Config   : empty tenant and application - fill them in before the first run (guide, chapters 5 and 7)"
+Write-Host "  Config   : empty tenant and application - fill them in before the first run (user guide, chapter 1)"
 Write-Host ''
 $all | Sort-Object FullName | ForEach-Object { '    {0,10:N0}  {1}' -f $_.Length, $_.FullName.Substring($Destination.Length + 1) }

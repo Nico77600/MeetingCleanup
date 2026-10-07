@@ -1002,6 +1002,145 @@ Describe 'Window' {    It 'builds the window from the configuration' {
         $f.Controls.WhoTitle.Text | Should -Be 'Rooms'
         $f.Form.Close()
     }
+
+    It 'searches and removes from the window: rows filled at once, the boxes ticked written back, the report' {
+        New-TestTenant
+        $s = New-TestSettings
+        $null = Connect-Test $s
+        $f = New-MclForm -Configuration $s -Theme Light
+        $c = $f.Controls
+        $c.Organizer.Text = 'org@contoso.test'
+        $c.StartDate.SelectedDate = [datetime]'2030-01-01'; $c.EndDate.SelectedDate = [datetime]'2030-12-31'
+        try {
+            & $script:Module { $script:GuiInline = $true; Invoke-MclGuiSearch }
+            $f.Rows.Count | Should -Be 3
+            $f.Rows[0].GetType().Name | Should -Be 'MeetingRow'
+            ($f.Lines -join "`n") | Should -Match 'Report: '
+            $c.Status.Text | Should -Match '3 meeting'
+            $c.Apply.IsEnabled | Should -BeTrue
+            & $script:Module { Set-MclGuiSelection $false }
+            $c.ApplyText.Text | Should -Be 'Remove the meetings ticked'
+            ($f.Rows | Where-Object Subject -like 'M1*').Selected = $true
+            & $script:Module { Update-MclGuiState }
+            $c.ApplyText.Text | Should -Be 'Remove 1 meeting'
+            & $script:Module { $script:GuiAnswers = [Collections.Generic.Queue[string]]::new(); $script:GuiAnswers.Enqueue('Yes'); Invoke-MclGuiApply }
+            (Get-FakeEvents 'att1@contoso.test' $script:Ids.M1).Count | Should -Be 0
+            (Get-FakeEvents 'att1@contoso.test' $script:Ids.S1).Count | Should -Be 1
+            ($f.Rows | Where-Object Subject -like 'M1*').Status | Should -Be 'Removed'
+            ($f.Rows | Where-Object Subject -like 'S1*').Status | Should -Be 'Skipped'
+            $c.Apply.IsEnabled | Should -BeFalse
+            & $script:Module { $script:Gui.LastFolder } | Should -Match 'MeetingCleanup_Remove_'
+        }
+        finally { & $script:Module { $script:GuiInline = $false; $script:GuiAnswers = $null }; $f.Form.Close() }
+    }
+
+    It 'runs its work in a background runspace: the window answers, the lines come through the queue' {
+        New-TestTenant
+        $r = Find-Test 'org@contoso.test' 'Organizer', 'Rooms' @{ Subject = 'M1' }
+        $run = Invoke-TestCleanup $r 'Remove'
+        $s = New-TestSettings
+        $f = New-MclForm -Configuration $s -Theme Light
+        try {
+            # A restore read in the background (no Graph needed to read a report), declined at the confirmation.
+            & $script:Module {
+                param($folder)
+                $script:Gui.LastAction = 'Remove'; $script:Gui.LastFolder = $folder
+                $script:GuiAnswers = [Collections.Generic.Queue[string]]::new(); $script:GuiAnswers.Enqueue('Yes'); $script:GuiAnswers.Enqueue('No')
+                Invoke-MclGuiRestore
+                $script:Gui.Running | Should -BeTrue
+                Wait-MclGuiWork -TimeoutSeconds 120
+                # Both questions asked: this run? yes; restore? no (after the plan read in the background).
+                $script:GuiAnswers.Count | Should -Be 0
+            } $run.Folder
+            & $script:Module { $script:Gui.Runspace.RunspaceStateInfo.State } | Should -Be 'Opened'
+            $f.Lines[-1] | Should -Match 'Nothing was changed'
+            $f.Controls.Search.IsEnabled | Should -BeTrue
+            & $script:Module { $q = [Collections.Concurrent.ConcurrentQueue[string[]]]::new(); $script:Ui = @{ Queue = $q }; try { Write-MclItem Ok 'to the window' } finally { $script:Ui = $null }; $q.Count } | Should -Be 1
+        }
+        finally { & $script:Module { $script:GuiAnswers = $null; if ($script:Gui.Runspace) { $script:Gui.Runspace.Dispose() } }; $f.Form.Close() }
+    }
+
+    It 'shows the progress of a run: the step, the part done, the time left, the taskbar button' {
+        $s = New-TestSettings
+        $f = New-MclForm -Configuration $s -Theme Light
+        $c = $f.Controls
+        $task = $f.Form.TaskbarItemInfo
+        try {
+            $c.ProgressBar.Visibility | Should -Be 'Collapsed'
+            & $script:Module { Start-MclGuiRun 'Searching...' }
+            $c.ProgressBar.Visibility | Should -Be 'Visible'
+            $c.ProgressBar.IsIndeterminate | Should -BeTrue
+            $c.ProgressText.Text | Should -Be 'Searching...'
+            $c.ProgressInfo.Text | Should -Match '^0:0\d elapsed$'
+            [string]$task.ProgressState | Should -Be 'Indeterminate'
+            & $script:Module { Add-MclGuiLine 'Step' '[3/6] Mailboxes'; Add-MclGuiLine 'Progress' '0.674|1,252/1,858 mailboxes searched|about 40 s left' }
+            $c.ProgressBar.IsIndeterminate | Should -BeFalse
+            $c.ProgressBar.Value | Should -Be 0.674
+            $c.ProgressText.Text | Should -Be ('Step 3/6 {0} Mailboxes  {0}  1,252/1,858 mailboxes searched' -f [char]0x00B7)
+            $c.ProgressInfo.Text | Should -Be ('67 %  {0}  about 40 s left' -f [char]0x00B7)
+            [string]$task.ProgressState | Should -Be 'Normal'
+            $task.ProgressValue | Should -Be 0.674
+            # A new step: nothing counted yet, the bar moves again; a line of an older format (no time left).
+            & $script:Module { Add-MclGuiLine 'Step' '[4/6] Attendees' }
+            $c.ProgressBar.IsIndeterminate | Should -BeTrue
+            $c.ProgressText.Text | Should -Be ('Step 4/6 {0} Attendees' -f [char]0x00B7)
+            & $script:Module { Add-MclGuiLine 'Progress' '0.500|2/4 meetings read' }
+            $c.ProgressInfo.Text | Should -Be '50 %'
+            # A question: the bar stops; Stop: the taskbar button turns yellow.
+            & $script:Module { Set-MclGuiProgress -Waiting; Set-MclGuiProgress -Tick }
+            $c.ProgressBar.Visibility | Should -Be 'Collapsed'
+            $c.ProgressText.Text | Should -Be 'Waiting for your answer'
+            & $script:Module { Set-MclGuiProgress -Start 'Transferring...'; Set-MclGuiProgress -Stopping; Set-MclGuiProgress -Tick }
+            $c.ProgressInfo.Text | Should -Be 'Stopping...'
+            [string]$task.ProgressState | Should -Be 'Paused'
+            & $script:Module { Stop-MclGuiRun }
+            $c.ProgressBar.Visibility | Should -Be 'Collapsed'
+            $c.ProgressBar.IsIndeterminate | Should -BeFalse
+            $c.ProgressText.Text | Should -Be ''
+            [string]$task.ProgressState | Should -Be 'None'
+            # Lines after the run (the last ones read from the queue) do not show the bar again.
+            & $script:Module { Add-MclGuiLine 'Progress' '1.000|4/4 meetings read|' }
+            $c.ProgressBar.Visibility | Should -Be 'Collapsed'
+        }
+        finally { $f.Form.Close() }
+    }
+}
+
+Describe 'Progress' {
+    It 'tells the time left from the speed of the progress, once it can be told' {
+        & $script:Module {
+            $script:ProgressEta = $null
+            $t0 = [datetime]'2030-01-01T10:00:00Z'
+            Get-MclProgressEta -Fraction 0.10 -Text '186/1,858 mailboxes searched' -Now $t0 | Should -Be ''
+            # 1 s later: too early to tell.
+            Get-MclProgressEta -Fraction 0.20 -Text '372/1,858 mailboxes searched' -Now $t0.AddSeconds(1) | Should -Be ''
+            # 4 s for 20 %: 14 s for the 70 % left.
+            Get-MclProgressEta -Fraction 0.30 -Text '557/1,858 mailboxes searched' -Now $t0.AddSeconds(4) | Should -Be 'about 15 s left'
+            # A slow burst (alone: 26 s): smoothed with the last figure brought forward (10 s), 18 s.
+            Get-MclProgressEta -Fraction 0.31 -Text '576/1,858 mailboxes searched' -Now $t0.AddSeconds(8) | Should -Be 'about 20 s left'
+            Get-MclProgressEta -Fraction 1.00 -Text '1,858/1,858 mailboxes searched' -Now $t0.AddSeconds(13) | Should -Be ''
+            # Another progress (another label, or going back) starts again.
+            Get-MclProgressEta -Fraction 0.50 -Text '10/20 attendee copies looked up' -Now $t0.AddSeconds(20) | Should -Be ''
+            Get-MclProgressEta -Fraction 0.10 -Text '2/20 attendee copies looked up' -Now $t0.AddSeconds(30) | Should -Be ''
+            $script:ProgressEta.From | Should -Be 0.10
+            # Counts written the French way (narrow no-break space) are the same label.
+            Get-MclProgressEta -Fraction 0.20 -Text ('1{0}000/5{0}000 copies removed' -f [char]0x202F) -Now $t0.AddSeconds(31) | Should -Be ''
+            Get-MclProgressEta -Fraction 0.40 -Text ('2{0}000/5{0}000 copies removed' -f [char]0x202F) -Now $t0.AddSeconds(35) | Should -Be 'about 15 s left'
+            $script:ProgressEta = $null
+        }
+    }
+
+    It 'rounds the time left as a person would say it' {
+        & $script:Module {
+            Format-MclTimeLeft 4 | Should -Be 'a few seconds left'
+            Format-MclTimeLeft 21 | Should -Be 'about 25 s left'
+            Format-MclTimeLeft 58 | Should -Be 'about 1 min left'
+            Format-MclTimeLeft 89 | Should -Be 'about 1 min 30 s left'
+            Format-MclTimeLeft 200 | Should -Be 'about 3 min 20 s left'
+            Format-MclTimeLeft 600 | Should -Be 'about 10 min left'
+            Format-MclTimeLeft 4000 | Should -Be 'about 1 h 07 min left'
+        }
+    }
 }
 
 Describe 'Command line' {

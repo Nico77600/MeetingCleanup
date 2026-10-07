@@ -15,7 +15,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.0
+    Version : 1.2.2
 #>
 
 $script:ReportColumns = [ordered]@{
@@ -25,35 +25,20 @@ $script:ReportColumns = [ordered]@{
 }
 
 function Format-MclCsvCell {
+    <# A CSV cell: text starting with = + - @ (or tab, CR) prefixed with an apostrophe, quoted when needed (compiled). #>
     param([AllowNull()][object]$Value, [Parameter(Mandatory = $true)][string]$Delimiter)
-
-    if ($null -eq $Value) { return '' }
-    if ($Value -is [bool]) { $text = if ($Value) { 'True' } else { 'False' } }
-    elseif ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]) { $text = (@($Value) -join ' | ') }
-    elseif ($Value -is [string]) {
-        $text = $Value
-        # Formula injection: Excel evaluates a cell starting with = + - @ (or tab / CR).
-        if ($text -match '^[=+\-@\t\r]') { $text = "'" + $text }
-    }
-    else { $text = [string]$Value }
-    if ($text.Contains($Delimiter) -or $text.Contains('"') -or $text -match '[\r\n]') { $text = '"' + $text.Replace('"', '""') + '"' }
-    return $text
+    return [MeetingCleanupNative.Fast]::CsvCell($Value, $Delimiter)
 }
 
 function Write-MclCsv {
+    <# A CSV file: UTF-8 with BOM, the columns given, one line per row (compiled). #>
     param(
         [AllowEmptyCollection()][object[]]$Rows,
         [Parameter(Mandatory = $true)][string[]]$Columns,
         [Parameter(Mandatory = $true)][string]$Path,
         [string]$Delimiter = ';'
     )
-
-    $builder = [Text.StringBuilder]::new()
-    [void]$builder.AppendLine((@($Columns | ForEach-Object { Format-MclCsvCell $_ $Delimiter }) -join $Delimiter))
-    foreach ($row in @($Rows)) {
-        [void]$builder.AppendLine((@($Columns | ForEach-Object { Format-MclCsvCell (Get-MclProperty $row $_) $Delimiter }) -join $Delimiter))
-    }
-    [IO.File]::WriteAllText($Path, $builder.ToString(), [Text.UTF8Encoding]::new($true))
+    [MeetingCleanupNative.Fast]::WriteCsv($Rows, $Columns, $Path, $Delimiter)
 }
 
 function ConvertTo-MclEmbeddedJson {
@@ -65,52 +50,21 @@ function ConvertTo-MclEmbeddedJson {
 }
 
 function Get-MclMeetingRows {
-    <# The meetings flattened for the CSV and the HTML. #>
+    <# The meetings flattened for the CSV and the HTML: one copy per mailbox (an occurrence copy is counted once for its mailbox); the new organizer is not a copy. #>
     param([Parameter(Mandatory = $true)][pscustomobject]$Result)
-    foreach ($m in @($Result.Meetings)) {
-        # One copy per mailbox (an occurrence copy is counted once for its mailbox); the new organizer is not a copy.
-        $copies = @($m.Copies | Where-Object { $_.EventId -and $_.Role -in 'Organizer', 'Attendee', 'Room' } | Group-Object Mailbox | ForEach-Object { $_.Group[0] })
-        [pscustomobject]@{
-            MeetingId = $m.MeetingId; Subject = $m.Subject; Organizer = $m.Organizer; OrganizerName = $m.OrganizerName; Kind = $m.Kind
-            Scope = [string](Get-MclProperty $m 'Scope'); Occurrences = [int](Get-MclProperty $m 'Occurrences')
-            NewOrganizer = [string](Get-MclProperty $m 'NewOrganizer'); NewMeetingId = [string](Get-MclProperty $m 'NewMeetingId'); TransferMethod = [string](Get-MclProperty $m 'TransferMethod')
-            StartText = $m.StartText; EndText = $m.EndText; NextInPeriod = $m.NextInPeriod; Recurrence = $m.Recurrence; Location = $m.Location
-            OrganizerCopy = $m.OrganizerCopy; Copies = $copies.Count; RoomCopies = @($copies | Where-Object Role -eq 'Room').Count
-            AttendeeCopies = @($copies | Where-Object Role -eq 'Attendee').Count; NotProcessed = @($m.Copies | Where-Object Result -eq 'Not processed').Count
-            Cancelled = [bool]$m.Cancelled; Selected = [bool]$m.Selected; Status = $m.Status; Notes = @($m.Notes)
-        }
-    }
+    [MeetingCleanupNative.Fast]::MeetingTable($Result.Meetings).ToObjects()
 }
 
 function Get-MclCopyRows {
     param([Parameter(Mandatory = $true)][pscustomobject]$Result)
-    foreach ($m in @($Result.Meetings)) {
-        foreach ($c in @($m.Copies)) {
-            [pscustomobject]@{
-                MeetingId = $m.MeetingId; MeetingSubject = $m.Subject; Organizer = $m.Organizer; Mailbox = $c.Mailbox; Role = $c.Role; Via = $c.Via; Occurrence = [string](Get-MclProperty $c 'Occurrence'); Response = $c.Response; ShowAs = (Get-MclProperty $c 'ShowAs')
-                Cancelled = [bool]$c.Cancelled; Action = $c.Action; Result = $c.Result; HttpStatus = $(if ($c.HttpStatus) { $c.HttpStatus } else { '' })
-                Verified = $c.Verified; ActionUtc = (Get-MclProperty $c 'ActionUtc'); Detail = $c.Detail; EventId = $c.EventId
-            }
-        }
-    }
+    [MeetingCleanupNative.Fast]::CopyTable($Result.Meetings).ToObjects()
 }
 
 function Get-MclOrganizerRows {
     <# One row per organizer of the run: its mailbox and what was found and done for its meetings. #>
     param([Parameter(Mandatory = $true)][pscustomobject]$Result)
-    foreach ($o in @($Result.Organizers)) {
-        $keys = @(@($o.Addresses) + [string]$o.PrimaryAddress | Where-Object { $_ } | ForEach-Object { ([string]$_).ToLowerInvariant() })
-        $mine = @($Result.Meetings | Where-Object { $k = [string](Get-MclProperty $_ 'OrganizerKey'); if (-not $k) { $k = [string]$_.Organizer }; $keys -contains $k.ToLowerInvariant() })
-        $copies = @($mine | ForEach-Object { @($_.Copies) })
-        [pscustomobject]@{
-            Input = $o.Input; DisplayName = $o.DisplayName; PrimaryAddress = $o.PrimaryAddress; State = $o.State; Detail = $o.Detail
-            Meetings = $mine.Count; Series = @($mine | Where-Object Kind -eq 'Series').Count; Copies = @($copies | Where-Object EventId).Count
-            Removed = @($copies | Where-Object Result -eq 'Removed').Count; Cancelled = @($copies | Where-Object Result -eq 'Cancelled').Count
-            Restored = @($copies | Where-Object Result -eq 'Restored').Count; Transferred = @($mine | Where-Object Status -eq 'Transferred').Count; Failed = @($copies | Where-Object Result -eq 'Failed').Count
-        }
-    }
+    [MeetingCleanupNative.Fast]::OrganizerTable($Result.Organizers, $Result.Meetings).ToObjects()
 }
-
 function New-MclRunFolder {
     <# New folder of a run under OutputPath: <Prefix>_<Action>_<yyyyMMdd-HHmmss>. #>
     param([Parameter(Mandatory = $true)][string]$OutputPath, [string]$Prefix = 'MeetingCleanup', [string]$Action = 'Report')
@@ -142,17 +96,18 @@ function Export-MclReport {
     )
 
     $runPath = if ($Directory) { [void][IO.Directory]::CreateDirectory($Directory); $Directory } else { New-MclRunFolder -OutputPath $OutputPath -Prefix $Prefix -Action ([string]$Result.Action) }
-    $meetings = @(Get-MclMeetingRows $Result)
-    $copies = @(Get-MclCopyRows $Result)
-    $organizers = @(Get-MclOrganizerRows $Result)
+    # The rows (thousands for a large search) as compiled tables, written to CSV and JSON without PowerShell objects.
+    $meetings = [MeetingCleanupNative.Fast]::MeetingTable($Result.Meetings)
+    $copies = [MeetingCleanupNative.Fast]::CopyTable($Result.Meetings)
+    $organizers = [MeetingCleanupNative.Fast]::OrganizerTable($Result.Organizers, $Result.Meetings)
     $files = [ordered]@{}
     if ($Formats -contains 'Csv' -and -not $SummaryOnly) {
         $files.Meetings = Join-Path $runPath "$Prefix-Meetings.csv"
-        Write-MclCsv -Rows $meetings -Columns $script:ReportColumns.Meetings -Path $files.Meetings -Delimiter $Delimiter
+        [MeetingCleanupNative.Fast]::WriteTableCsv($meetings, $script:ReportColumns.Meetings, $files.Meetings, $Delimiter)
         $files.Copies = Join-Path $runPath "$Prefix-Copies.csv"
-        Write-MclCsv -Rows $copies -Columns $script:ReportColumns.Copies -Path $files.Copies -Delimiter $Delimiter
+        [MeetingCleanupNative.Fast]::WriteTableCsv($copies, $script:ReportColumns.Copies, $files.Copies, $Delimiter)
         $files.Organizers = Join-Path $runPath "$Prefix-Organizers.csv"
-        Write-MclCsv -Rows $organizers -Columns $script:ReportColumns.Organizers -Path $files.Organizers -Delimiter $Delimiter
+        [MeetingCleanupNative.Fast]::WriteTableCsv($organizers, $script:ReportColumns.Organizers, $files.Organizers, $Delimiter)
     }
     $files.Summary = Join-Path $runPath "$Prefix-Summary.json"
     # RunRemoved (restore: the copies of the source run, also in Meetings) is not written again.
@@ -176,9 +131,10 @@ function Export-MclReport {
         $title = "Meeting Cleanup | $($Result.Action) | $(if ($names.Count -le 3) { $names -join ', ' } else { "$($names.Count) organizers" })"
         $html = $html.Replace('{{TITLE}}', [Net.WebUtility]::HtmlEncode($title))
         $html = $html.Replace('{{SUMMARY_JSON}}', (ConvertTo-MclEmbeddedJson $summary))
-        $html = $html.Replace('{{MEETINGS_JSON}}', (ConvertTo-MclEmbeddedJson @($meetings)))
-        $html = $html.Replace('{{COPIES_JSON}}', (ConvertTo-MclEmbeddedJson @($copies)))
-        $html = $html.Replace('{{ORGANIZERS_JSON}}', (ConvertTo-MclEmbeddedJson @($organizers)))
+        # The rows (thousands for a large search): compiled JSON writer, HTML-safe as well.
+        $html = $html.Replace('{{MEETINGS_JSON}}', [MeetingCleanupNative.Fast]::TableJson($meetings))
+        $html = $html.Replace('{{COPIES_JSON}}', [MeetingCleanupNative.Fast]::TableJson($copies))
+        $html = $html.Replace('{{ORGANIZERS_JSON}}', [MeetingCleanupNative.Fast]::TableJson($organizers))
         if ($html -match '\{\{[A-Z_]+\}\}') { throw "Report template marker not replaced: $($Matches[0])" }
         $files.Html = Join-Path $runPath "$Prefix.html"
         [IO.File]::WriteAllText($files.Html, $html, [Text.UTF8Encoding]::new($true))

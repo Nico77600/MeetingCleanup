@@ -21,7 +21,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.0
+    Version : 1.2.2
 #>
 
 $script:EventSelect = 'id,iCalUId,subject,type,organizer,isOrganizer,start,end,isCancelled,recurrence,responseStatus,showAs'
@@ -47,44 +47,15 @@ function Get-MclProperty {
 }
 
 function ConvertTo-MclDateUtc {
-    <# A Graph dateTimeTimeZone (UTC by default) to a UTC DateTime. #>
+    <# A Graph dateTimeTimeZone (UTC by default) to a UTC DateTime (compiled: MeetingCleanupNative.Fast.ToUtc). #>
     param($Value)
-    if ($null -eq $Value) { return $null }
-    $text = [string](Get-MclProperty $Value 'dateTime')
-    if (-not $text) { return $null }
-    $zone = [string](Get-MclProperty $Value 'timeZone')
-    $d = [datetime]::Parse($text, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind)
-    if ($d.Kind -eq [DateTimeKind]::Utc) { return $d }
-    if (-not $zone -or $zone -eq 'UTC') { return [datetime]::SpecifyKind($d, [DateTimeKind]::Utc) }
-    try { return [TimeZoneInfo]::ConvertTimeToUtc([datetime]::SpecifyKind($d, [DateTimeKind]::Unspecified), [TimeZoneInfo]::FindSystemTimeZoneById($zone)) }
-    catch { return [datetime]::SpecifyKind($d, [DateTimeKind]::Utc) }
+    return [MeetingCleanupNative.Fast]::ToUtc($Value)
 }
 
 function Format-MclRecurrence {
-    <# A Graph patternedRecurrence in words: Weekly (Tuesday), 6 occurrences from 2026-10-13. #>
+    <# A Graph patternedRecurrence in words: Weekly (Tuesday), 6 occurrences from 2026-10-13 (compiled). #>
     param($Recurrence)
-    if (-not $Recurrence) { return '' }
-    $p = Get-MclProperty $Recurrence 'pattern'; $r = Get-MclProperty $Recurrence 'range'
-    $type = [string](Get-MclProperty $p 'type')
-    $interval = [int](Get-MclProperty $p 'interval')
-    $days = @(Get-MclProperty $p 'daysOfWeek' | Where-Object { $_ } | ForEach-Object { (Get-Culture -Name 'en-US').TextInfo.ToTitleCase([string]$_) })
-    $every = if ($interval -gt 1) { "every $interval " } else { '' }
-    $text = switch ($type) {
-        'daily' { if ($every) { "${every}days" } else { 'Daily' } }
-        'weekly' { "$(if ($every) { "${every}weeks" } else { 'Weekly' }) ($($days -join ', '))" }
-        'absoluteMonthly' { "$(if ($every) { "${every}months" } else { 'Monthly' }) (day $(Get-MclProperty $p 'dayOfMonth'))" }
-        'relativeMonthly' { "$(if ($every) { "${every}months" } else { 'Monthly' }) ($(Get-MclProperty $p 'index') $($days -join ', '))" }
-        'absoluteYearly' { "Yearly (day $(Get-MclProperty $p 'dayOfMonth') of month $(Get-MclProperty $p 'month'))" }
-        'relativeYearly' { "Yearly ($(Get-MclProperty $p 'index') $($days -join ', ') of month $(Get-MclProperty $p 'month'))" }
-        default { $type }
-    }
-    $from = [string](Get-MclProperty $r 'startDate')
-    switch ([string](Get-MclProperty $r 'type')) {
-        'endDate' { $text += ", from $from until $(Get-MclProperty $r 'endDate')" }
-        'numbered' { $text += ", $(Get-MclProperty $r 'numberOfOccurrences') occurrences from $from" }
-        default { $text += ", from $from, no end" }
-    }
-    return $text
+    return [MeetingCleanupNative.Fast]::Recurrence($Recurrence)
 }
 
 function Test-MclSeriesInPeriod {
@@ -294,64 +265,15 @@ function Get-MclSearchMailboxes {
 }
 
 function New-MclCopy {
+    <# A copy of a meeting in one mailbox (compiled: MeetingCleanupNative.Fast.NewCopy, the same properties). #>
     param([string]$Key, [string]$Mailbox, [string]$Role, [string]$Via, $Event, [string]$Result = '', [string]$Detail = '')
-    [pscustomobject]@{
-        MeetingId  = $Key
-        Mailbox    = $Mailbox.ToLowerInvariant()
-        Role       = $Role
-        Via        = $Via
-        EventId    = [string](Get-MclProperty $Event 'id')
-        Subject    = [string](Get-MclProperty $Event 'subject')
-        Response   = [string](Get-MclProperty (Get-MclProperty $Event 'responseStatus') 'response')
-        ShowAs     = [string](Get-MclProperty $Event 'showAs')
-        Cancelled  = [bool](Get-MclProperty $Event 'isCancelled')
-        Action     = ''
-        Result     = $Result
-        HttpStatus = 0
-        Detail     = $Detail
-        Verified   = ''
-        ActionUtc  = ''
-        Occurrence = ''
-        OccurrenceStart = ''
-        SeriesId   = ''
-    }
+    [MeetingCleanupNative.Fast]::NewCopy($Key, $Mailbox, $Role, $Via, $Event, $Result, $Detail)
 }
 
 function New-MclMeeting {
+    <# A meeting found in a calendar (compiled: MeetingCleanupNative.Fast.NewMeeting). #>
     param([string]$Key, $Event, [string]$Mailbox, [hashtable]$Settings)
-    $start = ConvertTo-MclDateUtc (Get-MclProperty $Event 'start')
-    $end = ConvertTo-MclDateUtc (Get-MclProperty $Event 'end')
-    $organizer = Get-MclProperty (Get-MclProperty $Event 'organizer') 'emailAddress'
-    [pscustomobject]@{
-        MeetingId     = $Key
-        Subject       = [string](Get-MclProperty $Event 'subject')
-        Organizer     = ([string](Get-MclProperty $organizer 'address')).ToLowerInvariant()
-        OrganizerName = [string](Get-MclProperty $organizer 'name')
-        OrganizerKey  = ''
-        Kind          = if ([string](Get-MclProperty $Event 'type') -eq 'seriesMaster') { 'Series' } else { 'Single' }
-        Start         = $start
-        End           = $end
-        StartText     = Format-MclDate $start $Settings.TimeZone
-        EndText       = Format-MclDate $end $Settings.TimeZone
-        NextInPeriod  = ''
-        Recurrence    = Format-MclRecurrence (Get-MclProperty $Event 'recurrence')
-        Location      = ''
-        Cancelled     = [bool](Get-MclProperty $Event 'isCancelled')
-        OrganizerCopy = 'Not checked'
-        Attendees     = @()
-        Copies        = [Collections.Generic.List[object]]::new()
-        Selected      = $true
-        Status        = 'Found'
-        Notes         = [Collections.Generic.List[string]]::new()
-        SubjectFromRoom = $false
-        Scope         = 'Whole'
-        Occurrences   = 0
-        RecurrenceData = $null
-        TimeZone      = ''
-        NewOrganizer  = ''
-        NewMeetingId  = ''
-        TransferMethod = ''
-    }
+    [MeetingCleanupNative.Fast]::NewMeeting($Key, $Event, (Get-MclTimeZone $Settings.TimeZone))
 }
 
 function Find-MclMeetings {
@@ -433,6 +355,9 @@ function Find-MclMeetings {
     $orgByMailbox = @{}
     foreach ($o in @($organizers | Where-Object State -eq 'Mailbox')) { foreach ($a in @($o.Addresses) + [string]$o.Input) { $orgByMailbox[$a.ToLowerInvariant()] = $o } }
     $problems = [Collections.Generic.List[string]]::new()
+    $fast = [MeetingCleanupNative.Fast]
+    $zone = Get-MclTimeZone $Settings.TimeZone
+    $via = @{ Organizer = 'Organizer calendar'; Rooms = 'Room search'; Mailboxes = 'List search' }
     foreach ($m in $plan.Mailboxes) {
         $r = $results[$m.Address]
         if ($r.Status -ne 200) {
@@ -444,28 +369,19 @@ function Find-MclMeetings {
         }
         $searched.Read++
         $mailboxOrg = $orgByMailbox[$m.Address]
-        foreach ($ev in $r.Values) {
-            $searched.Events++
-            $address = ([string](Get-MclProperty (Get-MclProperty (Get-MclProperty $ev 'organizer') 'emailAddress') 'address')).ToLowerInvariant()
-            $own = $mailboxOrg -and [bool](Get-MclProperty $ev 'isOrganizer')
-            $org = if ($own) { $mailboxOrg } else { $orgAddress[$address] }
-            if ($roomsMode) {
-                # Every meeting of the room: its organizer is the one shown in the copy.
-                $own = [bool](Get-MclProperty $ev 'isOrganizer')
-                $org = [pscustomobject]@{ PrimaryAddress = $(if ($own) { $m.Address } else { $address }) }
-                if (-not $org.PrimaryAddress) { continue }
-            }
-            if (-not $org) { continue }
-            $key = ([string](Get-MclProperty $ev 'iCalUId')).ToUpperInvariant()
-            if (-not $key) { continue }
-            if ($ids.Count -and -not $ids.Contains($key)) { continue }
-            if ([string](Get-MclProperty $ev 'type') -eq 'seriesMaster' -and -not (Test-MclSeriesInPeriod (Get-MclProperty $ev 'recurrence') $Request.Start $Request.End)) { continue }
+        $mailboxVia = if ($via.ContainsKey($m.Scope)) { $via[$m.Scope] } else { 'All mailboxes' }
+        # Every calendar item of the mailbox, filtered in one compiled call (most are not the organizer's): the
+        # organizer compared (own meetings by isOrganizer), rooms mode every meeting, the meeting IDs asked for.
+        $searched.Events += $r.Values.Count
+        foreach ($x in $fast::MatchEvents($r.Values, $orgAddress, $mailboxOrg, [bool]$roomsMode, $m.Address, $ids)) {
+            if ($x.IsSeriesMaster -and -not (Test-MclSeriesInPeriod $x.Recurrence $Request.Start $Request.End)) { continue }
+            $key = $x.Key
             if (-not $meetings.Contains($key)) {
-                $meetings[$key] = New-MclMeeting -Key $key -Event $ev -Mailbox $m.Address -Settings $Settings
-                $meetings[$key].OrganizerKey = [string]$org.PrimaryAddress
+                $meetings[$key] = $fast::NewMeeting($key, $x.Event, $zone)
+                $meetings[$key].OrganizerKey = $x.OrganizerKey
             }
-            $role = if ($own) { 'Organizer' } elseif ($m.IsRoom) { 'Room' } else { 'Attendee' }
-            $meetings[$key].Copies.Add((New-MclCopy -Key $key -Mailbox $m.Address -Role $role -Via $(switch ($m.Scope) { 'Organizer' { 'Organizer calendar' } 'Rooms' { 'Room search' } 'Mailboxes' { 'List search' } default { 'All mailboxes' } }) -Event $ev))
+            $role = if ($x.Own) { 'Organizer' } elseif ($m.IsRoom) { 'Room' } else { 'Attendee' }
+            $meetings[$key].Copies.Add($fast::NewCopy($key, $m.Address, $role, $mailboxVia, $x.Event, '', ''))
         }
     }
     Write-MclItem Ok ('{0:N0} mailbox(es) read {1} {2:N0} calendar item(s) {1} {3:N0} meeting(s) of {4}' -f $searched.Read, $dot, $searched.Events, $meetings.Count, $(if ($roomsMode) { 'the rooms' } elseif ($organizers.Count -gt 1) { "the $($organizers.Count) organizers" } else { 'the organizer' })) -Icon Calendar
@@ -488,7 +404,8 @@ function Find-MclMeetings {
             $r = $inst[$mt.MeetingId]
             if ($r.Status -eq 200 -and -not $r.Values.Count) { $meetings.Remove($mt.MeetingId); $dropped++; continue }
             if ($r.Status -eq 200) {
-                $next = $r.Values | ForEach-Object { ConvertTo-MclDateUtc $_.start } | Sort-Object | Select-Object -First 1
+                $next = $null
+                foreach ($o in $r.Values) { $d = $fast::ToUtc($fast::Prop($o, 'start')); if ($null -ne $d -and ($null -eq $next -or $d -lt $next)) { $next = $d } }
                 $mt.NextInPeriod = Format-MclDate $next $Settings.TimeZone
             }
             else { $mt.Notes.Add("Occurrences in the period not checked ($($r.Status) $($r.ErrorCode)): the series is kept.") }
@@ -579,11 +496,14 @@ function Split-MclSeriesOccurrences {
     $requests = [Collections.Generic.List[object]]::new()
     $copies = @{}
     $byMeeting = @{}
+    # The request of each copy, by the copy itself (a copy object is not a key by value).
+    $idOf = [Collections.Generic.Dictionary[object, string]]::new([Collections.Generic.ReferenceEqualityComparer]::Instance)
     for ($i = 0; $i -lt $series.Count; $i++) {
         $byMeeting[$i] = [Collections.Generic.List[string]]::new()
         foreach ($c in @($series[$i].Copies | Where-Object EventId)) {
             $id = "o$($requests.Count)"
             $copies[$id] = $c
+            $idOf[$c] = $id
             $byMeeting[$i].Add($id)
             $requests.Add((New-MclGraphRequest -Id $id -Url "$(Get-MclUserPath $c.Mailbox)/events/$([Uri]::EscapeDataString($c.EventId))/instances?startDateTime=${S}Z&endDateTime=${E}Z&`$select=$select&`$top=200"))
         }
@@ -648,8 +568,8 @@ function Split-MclSeriesOccurrences {
         $split++
         $list = [Collections.Generic.List[object]]::new()
         foreach ($c in @($m.Copies)) {
-            $id = $byMeeting[$i] | Where-Object { [object]::ReferenceEquals($copies[$_], $c) } | Select-Object -First 1
-            if (-not $id) { $list.Add($c); continue }
+            $id = $null
+            if (-not $idOf.TryGetValue($c, [ref]$id)) { $list.Add($c); continue }
             $r = $res[$id]
             if ($r.Status -ne 200) {
                 $c.EventId = ''; $c.Result = 'Not processed'; $c.Detail = "occurrences of the period not read ($(Get-MclMailboxProblem $r)): the copy is left as it is"
@@ -661,11 +581,11 @@ function Split-MclSeriesOccurrences {
                 $c.EventId = ''; $c.Result = 'No copy'; $c.Detail = 'no occurrence of the rooms searched in the period in this mailbox (declined, removed or moved)'
                 $list.Add($c); continue
             }
-            foreach ($o in ($mine | Sort-Object { ConvertTo-MclDateUtc $_.start })) {
-                $occ = New-MclCopy -Key $m.MeetingId -Mailbox $c.Mailbox -Role $c.Role -Via $c.Via -Event $o
+            foreach ($o in ($mine | Sort-Object { [MeetingCleanupNative.Fast]::ToUtc($_.start) })) {
+                $occ = [MeetingCleanupNative.Fast]::NewCopy($m.MeetingId, $c.Mailbox, $c.Role, $c.Via, $o, '', '')
                 if (-not $occ.Subject) { $occ.Subject = $c.Subject }
                 $when = ConvertTo-MclDateUtc $o.start
-                $occ.Occurrence = Format-MclDate $when $Settings.TimeZone
+                $occ.Occurrence = [MeetingCleanupNative.Fast]::FormatDate($when, $zone, $false, $false)
                 $occ.OccurrenceStart = $when.ToString('o')
                 $occ.SeriesId = $c.EventId
                 $list.Add($occ)
@@ -701,44 +621,71 @@ function Complete-MclMeetings {
     $orgAddress = @{}
     foreach ($o in $Organizers) { foreach ($a in $o.Addresses) { $orgAddress[$a] = $o } }
     $rank = @{ Organizer = 0; Attendee = 1; Room = 2 }
+    $fast = [MeetingCleanupNative.Fast]
 
     # ---- details from the best copy --------------------------------------------------------------
+    $refs = @{}
     $requests = foreach ($m in $Meetings) {
-        $ref = $m.Copies | Where-Object EventId | Sort-Object { $rank[$_.Role] } | Select-Object -First 1
+        $ref = Get-MclBestCopy $m
+        $refs[$m.MeetingId] = $ref
         New-MclGraphRequest -Id $m.MeetingId -Url "$(Get-MclUserPath $ref.Mailbox)/events/$([Uri]::EscapeDataString($ref.EventId))?`$select=subject,attendees,organizer,location,start,end,type,recurrence,isCancelled,originalStartTimeZone"
     }
     $details = Invoke-MclGraphBatch -Requests @($requests) -OnProgress { param($done, $total) Write-MclProgress ($done / [Math]::Max(1, $total)) ('{0:N0}/{1:N0} meetings read' -f $done, $total) }
     foreach ($m in $Meetings) {
         $r = $details[$m.MeetingId]
-        $ref = $m.Copies | Where-Object EventId | Sort-Object { $rank[$_.Role] } | Select-Object -First 1
+        $ref = $refs[$m.MeetingId]
         if ($r.Status -ne 200) { $m.Notes.Add("Details not read from $($ref.Mailbox): $($r.Status) $($r.ErrorCode)."); continue }
         $ev = $r.Body
-        $m.Subject = [string]$ev.subject
+        $m.Subject = $fast::Text($ev, 'subject')
         $m.SubjectFromRoom = $ref.Role -eq 'Room'
-        $m.Location = [string](Get-MclProperty (Get-MclProperty $ev 'location') 'displayName')
-        $m.Attendees = @(@($ev.attendees) | Where-Object { $_ } | ForEach-Object {
-                [pscustomobject]@{ Address = ([string]$_.emailAddress.address).ToLowerInvariant(); Name = [string]$_.emailAddress.name; Type = [string]$_.type }
-            })
-        $org = Get-MclProperty (Get-MclProperty $ev 'organizer') 'emailAddress'
-        if ($org -and $org.address) { $m.Organizer = ([string]$org.address).ToLowerInvariant(); $m.OrganizerName = [string]$org.name }
-        if ($ev.recurrence) { $m.Recurrence = Format-MclRecurrence $ev.recurrence; $m.RecurrenceData = $ev.recurrence }
-        $m.TimeZone = [string](Get-MclProperty $ev 'originalStartTimeZone')
-        if ($ref.Role -eq 'Organizer' -and -not @($m.Attendees).Count) { $m.Notes.Add('Appointment without attendees: not a meeting.') }
+        $m.Location = $fast::Text($ev, 'location', 'displayName')
+        $attendees = [Collections.Generic.List[object]]::new()
+        foreach ($a in @($fast::Prop($ev, 'attendees'))) {
+            if ($a) { $attendees.Add([pscustomobject]@{ Address = $fast::Text($a, 'emailAddress', 'address').ToLowerInvariant(); Name = $fast::Text($a, 'emailAddress', 'name'); Type = $fast::Text($a, 'type') }) }
+        }
+        $m.Attendees = $attendees.ToArray()
+        $orgAddressOfEvent = $fast::Text($ev, 'organizer', 'emailAddress', 'address')
+        if ($orgAddressOfEvent) { $m.Organizer = $orgAddressOfEvent.ToLowerInvariant(); $m.OrganizerName = $fast::Text($ev, 'organizer', 'emailAddress', 'name') }
+        $recurrence = $fast::Prop($ev, 'recurrence')
+        if ($recurrence) { $m.Recurrence = Format-MclRecurrence $recurrence; $m.RecurrenceData = $recurrence }
+        $m.TimeZone = $fast::Text($ev, 'originalStartTimeZone')
+        if ($ref.Role -eq 'Organizer' -and -not $attendees.Count) { $m.Notes.Add('Appointment without attendees: not a meeting.') }
     }
     # An appointment of the organizer (no attendee) is not a meeting: left out.
     foreach ($m in @($Meetings)) {
-        if (@($m.Copies | Where-Object Role -eq 'Organizer').Count -and -not @($m.Attendees).Count -and $details[$m.MeetingId].Status -eq 200) { $m.Status = 'Appointment' }
+        $isOrganizer = $false
+        foreach ($c in $m.Copies) { if ($c.Role -eq 'Organizer') { $isOrganizer = $true; break } }
+        if ($isOrganizer -and -not @($m.Attendees).Count -and $details[$m.MeetingId].Status -eq 200) { $m.Status = 'Appointment' }
     }
 
     # ---- copies of the attendees, by iCalUId ---------------------------------------------------------
     $lookups = [ordered]@{}
     # Meetings whose organizer copy could not be read (denied, throttled, error): not a deleted mailbox.
     $orgNotRead = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    # Per meeting: the mailboxes already listed, the items already known, and whether the organizer's copy is
+    # there - kept up to date as copies are added (no new read of the copies for each attendee).
+    $mailboxesOf = @{}
+    $itemsOf = @{}
+    $withOrganizerCopy = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($m in $Meetings) {
+        $mailboxesOf[$m.MeetingId] = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        $itemsOf[$m.MeetingId] = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($c in $m.Copies) {
+            [void]$mailboxesOf[$m.MeetingId].Add($c.Mailbox)
+            if ($c.EventId) { [void]$itemsOf[$m.MeetingId].Add($c.EventId); if ($c.Role -eq 'Organizer') { [void]$withOrganizerCopy.Add($m.MeetingId) } }
+        }
+    }
+    $addCopy = {
+        param($m, $c)
+        $m.Copies.Add($c)
+        [void]$mailboxesOf[$m.MeetingId].Add($c.Mailbox)
+        if ($c.EventId) { [void]$itemsOf[$m.MeetingId].Add($c.EventId); if ($c.Role -eq 'Organizer') { [void]$withOrganizerCopy.Add($m.MeetingId) } }
+    }
     $want = {
         param($m, [string]$Address, [string]$Type, [string]$Via)
         if (-not $Address -or $Address -notmatch '@') { return }
-        if (@($m.Copies | Where-Object { $_.Mailbox -eq $Address }).Count) { return }
-        if (($orgAddress.ContainsKey($Address) -or $Address -eq $m.Organizer) -and @($m.Copies | Where-Object { $_.Role -eq 'Organizer' -and $_.EventId }).Count) { return }
+        if ($mailboxesOf[$m.MeetingId].Contains($Address)) { return }
+        if (($orgAddress.ContainsKey($Address) -or $Address -eq $m.Organizer) -and $withOrganizerCopy.Contains($m.MeetingId)) { return }
         $id = "$($m.MeetingId)|$Address"
         if (-not $lookups.Contains($id)) { $lookups[$id] = [pscustomobject]@{ Meeting = $m; Address = $Address; Type = $Type; Via = $Via } }
     }
@@ -766,12 +713,12 @@ function Complete-MclMeetings {
                 if ($r.Values.Count) {
                     foreach ($ev in $r.Values) {
                         # The same item reached through another address of the mailbox (alias) is one copy.
-                        if (@($m.Copies | Where-Object { $_.EventId -and $_.EventId -eq [string]$ev.id }).Count) { continue }
-                        $copyRole = if ($role -eq 'Organizer' -and -not (Get-MclProperty $ev 'isOrganizer')) { 'Attendee' } else { $role }
-                        $m.Copies.Add((New-MclCopy -Key $m.MeetingId -Mailbox $l.Address -Role $copyRole -Via $l.Via -Event $ev))
+                        if ($itemsOf[$m.MeetingId].Contains($fast::Text($ev, 'id'))) { continue }
+                        $copyRole = if ($role -eq 'Organizer' -and -not $fast::Flag($ev, 'isOrganizer')) { 'Attendee' } else { $role }
+                        & $addCopy $m $fast::NewCopy($m.MeetingId, $l.Address, $copyRole, $l.Via, $ev, '', '')
                     }
                 }
-                else { $m.Copies.Add((New-MclCopy -Key $m.MeetingId -Mailbox $l.Address -Role $role -Via $l.Via -Event $null -Result 'No copy' -Detail 'no copy in this mailbox (declined and removed, or never received)')) }
+                else { & $addCopy $m $fast::NewCopy($m.MeetingId, $l.Address, $role, $l.Via, $null, 'No copy', 'no copy in this mailbox (declined and removed, or never received)') }
                 continue
             }
             if ($r.Status -eq 404 -and $r.ErrorCode -eq 'ErrorInvalidUser' -and $role -ne 'Organizer' -and $l.Via -eq 'Attendee list' -and $g.CanReadGroups) {
@@ -782,7 +729,7 @@ function Complete-MclMeetings {
             $notRead = $role -eq 'Organizer' -and -not (Test-MclNoMailbox $r)
             if ($notRead) { [void]$orgNotRead.Add($m.MeetingId) }
             $text = if ($notRead) { "organizer copy not read ($(Get-MclMailboxProblem $r)): the meeting cannot be cancelled" } elseif ($role -eq 'Organizer') { 'organizer mailbox deleted or not reachable' } else { Get-MclMailboxProblem $r }
-            $m.Copies.Add((New-MclCopy -Key $m.MeetingId -Mailbox $l.Address -Role $role -Via $l.Via -Event $null -Result 'Not processed' -Detail $text))
+            & $addCopy $m $fast::NewCopy($m.MeetingId, $l.Address, $role, $l.Via, $null, 'Not processed', $text)
         }
         $lookups = [ordered]@{}
         if (-not $unknown.Count) { break }
@@ -797,7 +744,7 @@ function Complete-MclMeetings {
         foreach ($address in $unknown.Keys) {
             $grp = if ($groups[$address].Status -eq 200) { $groups[$address].Values | Select-Object -First 1 } else { $null }
             if (-not $grp) {
-                foreach ($l in $unknown[$address]) { $l.Meeting.Copies.Add((New-MclCopy -Key $l.Meeting.MeetingId -Mailbox $address -Role 'Attendee' -Via $l.Via -Event $null -Result 'Not processed' -Detail 'not a mailbox of this tenant (external, deleted or contact)')) }
+                foreach ($l in $unknown[$address]) { & $addCopy $l.Meeting $fast::NewCopy($l.Meeting.MeetingId, $address, 'Attendee', $l.Via, $null, 'Not processed', 'not a mailbox of this tenant (external, deleted or contact)') }
                 continue
             }
             $groupFor[$address] = @{ Name = [string]$grp.displayName; Id = [string]$grp.id; Meetings = $unknown[$address] }
@@ -807,9 +754,10 @@ function Complete-MclMeetings {
             $members = Invoke-MclGraphBatch -Requests $memberRequests.ToArray() -FollowPages
             foreach ($address in $groupFor.Keys) {
                 $info = $groupFor[$address]
-                $mails = @($members[$address].Values | ForEach-Object { ([string]$_.mail).ToLowerInvariant() } | Where-Object { $_ })
+                $mails = [Collections.Generic.List[string]]::new()
+                foreach ($u in $members[$address].Values) { $mail = $fast::Text($u, 'mail').ToLowerInvariant(); if ($mail) { $mails.Add($mail) } }
                 foreach ($l in $info.Meetings) {
-                    $l.Meeting.Copies.Add((New-MclCopy -Key $l.Meeting.MeetingId -Mailbox $address -Role 'Group' -Via $l.Via -Event $null -Result 'Expanded' -Detail ("group '{0}': {1} member(s) with a mailbox" -f $info.Name, $mails.Count)))
+                    & $addCopy $l.Meeting $fast::NewCopy($l.Meeting.MeetingId, $address, 'Group', $l.Via, $null, 'Expanded', ("group '{0}': {1} member(s) with a mailbox" -f $info.Name, $mails.Count))
                     foreach ($mail in $mails) { & $want $l.Meeting $mail 'required' "Group $($info.Name)" }
                 }
             }
@@ -817,20 +765,27 @@ function Complete-MclMeetings {
         }
     }
 
-    # ---- summary per meeting ---------------------------------------------------------------------------
+    # ---- summary per meeting (one pass over its copies) ----------------------------------------------------
+    $total = 0; $roomCopies = 0; $skipped = 0; $appointments = 0; $present = 0
     foreach ($m in $Meetings) {
-        $orgCopy = @($m.Copies | Where-Object { $_.Role -eq 'Organizer' -and $_.EventId })
-        $orgRow = @($m.Copies | Where-Object { $_.Role -eq 'Organizer' -and -not $_.EventId })
-        $m.OrganizerCopy = if ($orgCopy.Count) { 'Present' } elseif ($orgNotRead.Contains($m.MeetingId)) { 'Not read' } elseif ($orgRow.Count -and $orgRow[0].Result -eq 'No copy') { 'Absent' } elseif ($orgRow.Count) { 'Mailbox deleted' } else { 'Not checked' }
-        $best = $m.Copies | Where-Object { $_.EventId -and $_.Role -ne 'Room' -and $_.Subject } | Sort-Object { $rank[$_.Role] } | Select-Object -First 1
+        $orgCopy = $false; $orgRow = $null; $best = $null; $bestRank = 9; $cancelled = $false
+        foreach ($c in $m.Copies) {
+            if ($c.Role -eq 'Organizer') { if ($c.EventId) { $orgCopy = $true } elseif (-not $orgRow) { $orgRow = $c } }
+            if ($c.EventId) {
+                $total++
+                if ($c.Role -eq 'Room') { $roomCopies++ }
+                elseif ($c.Subject) { $rk = $rank[$c.Role]; if ($null -eq $rk) { $rk = 3 }; if ($rk -lt $bestRank) { $bestRank = $rk; $best = $c } }
+            }
+            if ($c.Result -eq 'Not processed') { $skipped++ }
+            if ($c.Cancelled) { $cancelled = $true }
+        }
+        $m.OrganizerCopy = if ($orgCopy) { 'Present' } elseif ($orgNotRead.Contains($m.MeetingId)) { 'Not read' } elseif ($orgRow -and $orgRow.Result -eq 'No copy') { 'Absent' } elseif ($orgRow) { 'Mailbox deleted' } else { 'Not checked' }
         if ($best -and ($m.SubjectFromRoom -or -not $m.Subject)) { $m.Subject = $best.Subject; $m.SubjectFromRoom = $false }
-        $m.Cancelled = [bool]@($m.Copies | Where-Object Cancelled).Count
+        $m.Cancelled = $cancelled
+        if ($m.Status -eq 'Appointment') { $appointments++ }
+        if ($m.OrganizerCopy -eq 'Present') { $present++ }
     }
-    $total = @($Meetings | ForEach-Object { @($_.Copies | Where-Object EventId) }).Count
-    $rooms = @($Meetings | ForEach-Object { @($_.Copies | Where-Object { $_.EventId -and $_.Role -eq 'Room' }) }).Count
-    $skipped = @($Meetings | ForEach-Object { @($_.Copies | Where-Object Result -eq 'Not processed') }).Count
-    $appointments = @($Meetings | Where-Object Status -eq 'Appointment').Count
-    Write-MclItem Ok ('{0:N0} cop{1} of {2:N0} meeting(s) {3} {4:N0} in rooms {3} organizer copy present for {5:N0}' -f $total, $(if ($total -eq 1) { 'y' } else { 'ies' }), ($Meetings.Count - $appointments), $dot, $rooms, @($Meetings | Where-Object OrganizerCopy -eq 'Present').Count) -Icon People
+    Write-MclItem Ok ('{0:N0} cop{1} of {2:N0} meeting(s) {3} {4:N0} in rooms {3} organizer copy present for {5:N0}' -f $total, $(if ($total -eq 1) { 'y' } else { 'ies' }), ($Meetings.Count - $appointments), $dot, $roomCopies, $present) -Icon People
     if ($skipped) { Write-MclItem Skip ('{0:N0} attendee(s) not processed: external, deleted, on-premises or not reachable (listed in the report)' -f $skipped) }
     if ($appointments) { Write-MclItem Skip ('{0:N0} appointment(s) of the organizer without attendees left out' -f $appointments) }
     if (-not $g.CanReadGroups) {
@@ -840,32 +795,21 @@ function Complete-MclMeetings {
     }
 }
 
-function Update-MclResultCounts {
-    <# Totals of a result: meetings, copies, mailboxes, actions. #>
-    param([Parameter(Mandatory = $true)][pscustomobject]$Result)
-    $meetings = @($Result.Meetings | Where-Object { $_.Status -ne 'Appointment' })
-    $copies = @($meetings | ForEach-Object { @($_.Copies) })
-    $real = @($copies | Where-Object EventId)
-    $Result.Counts = [pscustomobject]@{
-        Meetings     = $meetings.Count
-        Series       = @($meetings | Where-Object Kind -eq 'Series').Count
-        Selected     = @($meetings | Where-Object Selected).Count
-        Copies       = $real.Count
-        Mailboxes    = @($real | ForEach-Object Mailbox | Select-Object -Unique).Count
-        RoomCopies   = @($real | Where-Object Role -eq 'Room').Count
-        OrganizerCopies = @($real | Where-Object Role -eq 'Organizer').Count
-        NotProcessed = @($copies | Where-Object Result -eq 'Not processed').Count
-        Removed      = @($copies | Where-Object Result -eq 'Removed').Count
-        Cancelled    = @($copies | Where-Object Result -eq 'Cancelled').Count
-        AlreadyGone  = @($copies | Where-Object Result -eq 'Already gone').Count
-        Kept         = @($copies | Where-Object Result -eq 'Kept').Count
-        Failed       = @($copies | Where-Object Result -eq 'Failed').Count
-        Restored     = @($copies | Where-Object Result -eq 'Restored').Count
-        NotFound     = @($copies | Where-Object Result -eq 'Not found').Count
-        AlreadyPresent = @($copies | Where-Object Result -eq 'Already present').Count
-        NotRestorable = @($copies | Where-Object Result -eq 'Not restorable').Count
-        Transferred  = @($Result.Meetings | Where-Object Status -eq 'Transferred').Count
-        OccurrenceCopies = @($real | Where-Object Occurrence).Count
-        Organizers   = @($Result.Organizers).Count
+function Get-MclBestCopy {
+    <# The copy a meeting is read from: the organizer's, else an attendee's, else a room's (one with an item ID). #>
+    param([Parameter(Mandatory = $true)]$Meeting, [switch]$OrganizerAttendeeRoomOnly)
+    $best = $null; $bestRank = 9
+    foreach ($c in $Meeting.Copies) {
+        if (-not $c.EventId) { continue }
+        $rk = switch ($c.Role) { 'Organizer' { 0 } 'Attendee' { 1 } 'Room' { 2 } default { 3 } }
+        if ($OrganizerAttendeeRoomOnly -and $rk -eq 3) { continue }
+        if ($rk -lt $bestRank) { $bestRank = $rk; $best = $c }
     }
+    return $best
+}
+
+function Update-MclResultCounts {
+    <# Totals of a result: meetings, copies, mailboxes, actions (compiled, one pass over the copies). #>
+    param([Parameter(Mandatory = $true)][pscustomobject]$Result)
+    $Result.Counts = [MeetingCleanupNative.Fast]::Counts($Result.Meetings, @($Result.Organizers).Count)
 }

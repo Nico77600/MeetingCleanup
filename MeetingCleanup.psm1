@@ -28,15 +28,21 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Net.Http
 
-$script:ToolVersion = '1.2.0'
+$script:ToolVersion = '1.2.2'
 $script:ToolRoot = $PSScriptRoot
 $script:LogWriter = $null
 $script:LogPath = $null
 $script:Quiet = $false
-# GUI hooks, set only while the window runs a search or a cleanup: Sink (progress lines), Pump (keeps the window responsive), Cancel.
+# GUI hooks, set only while the window runs a search or an action: Queue (progress lines, read by the window),
+# Sink (lines, inline runs), Cancel, Hold.
 $script:Ui = $null
 # Microsoft Graph connection of the current run (Connect-MclGraph).
 $script:Graph = $null
+
+# Compiled helpers (src\MeetingCleanup.Native.cs): once per PowerShell process.
+$native = 'MeetingCleanupNative.Fast' -as [type]
+if (-not $native) { Add-Type -Path (Join-Path $PSScriptRoot 'src\MeetingCleanup.Native.cs') }
+elseif ($native::Version -ne $script:ToolVersion) { throw "Meeting Cleanup $($native::Version) is already loaded in this PowerShell session: open a new PowerShell window to use $($script:ToolVersion)." }
 
 foreach ($part in 'Console', 'Config', 'Graph', 'Search', 'Cleanup', 'Restore', 'Transfer', 'Report', 'Gui') {
     . (Join-Path $PSScriptRoot "src\MeetingCleanup.$part.ps1")

@@ -1,12 +1,12 @@
 ---
 title: Meeting Cleanup
-subtitle: Administrator guide
-version: 1.2.0
+subtitle: Developer guide
+version: 1.2.2
 author: Nicolas Fabert
 updated: 2026-10-06
 ---
 
-# Meeting Cleanup — Administrator guide
+# Meeting Cleanup — Developer guide
 
 > Finds the meetings of one or many organizers — whether the mailbox still exists or has been deleted — or **every meeting of some rooms** in **Exchange Online**: one meeting, a series or every meeting of a period, in **every calendar** where they are: the organizer, the rooms, the attendees, the members of the groups invited. Then removes them **silently**, has the organizer **cancel** them, or **transfers** them to a new organizer; a silent removal can be **undone**. Console, window, CSV, JSON and HTML reports.
 
@@ -20,6 +20,9 @@ updated: 2026-10-06
 > Replace the example path with the folder where you downloaded or extracted this project.
 >
 > The `Install-Module` commands in this documentation use `-Force`, so they also update or reinstall a module that is already installed. If an older version still conflicts, close every PowerShell window, open a new one (as administrator for `-Scope AllUsers`), run `Uninstall-Module <ModuleName> -AllVersions -Force`, then run the `Install-Module` command again.
+
+> [!NOTE]
+> This is the **developer guide**: how the tool works, the actions in detail, the rights, every setting, the window, the report, the architecture and how to modify and validate the tool. For the prerequisites and the everyday commands only, read the [user guide](MeetingCleanup-UserGuide.md).
 
 ```cards
 user | Organizers present | One address, or a list of them (`-OrganizerFile`); Cancel sends the cancellation with your message and frees the rooms.
@@ -383,6 +386,8 @@ A file of mailboxes (`-MailboxFile`, `Search.MailboxFile`, `Search.RoomFile`) is
 
 Exit codes: `0` completed, `1` failed (nothing done after the first error), `2` finished with warnings (a copy not removed, a mailbox not read, an optional permission missing).
 
+More examples, one per everyday question (who still organizes what, a leaver, a transfer, one series, rooms closed, the leavers of the month, undo): [user guide, chapter 2](MeetingCleanup-UserGuide.md#2-everyday-use).
+
 <!-- icon: play -->
 ## 9. Window
 
@@ -391,16 +396,20 @@ Exit codes: `0` completed, `1` failed (nothing done after the first error), `2` 
 ![The window after a search](images/gui-search-light.png)
 
 1. **Meetings of organizers** or **Every meeting of rooms**, then the addresses (one per line, or *Load a list...* for a text or CSV file), **Meetings** (period, subject) and **Search in** on the left — with rooms, *Search in* is not used: the rooms given are searched. The *Connection* section holds the tenant and the application of the configuration (changes there are for the window only).
-2. **Search**: the progress shows the same lines as the console; the meetings appear on the right, each with a box ticked (with an *Organizer* column when there are several organizers). Selecting a meeting shows its copies: mailbox, role, how it was found, result. A search changes nothing and writes a report.
+2. **Search**: the progress shows the same lines as the console; the meetings appear on the right, each with a box ticked (with an *Organizer* column when there are several organizers). Selecting a meeting shows its copies: mailbox, role, how it was found, result. A click on a column header sorts the list. A search changes nothing and writes a report.
 3. Untick the meetings to keep, choose **Remove silently**, **Cancel and clean** (and the message) or **Transfer to a new organizer** (its address and the method), then the action button — *Remove 3 meetings*, *Transfer 2 meetings* — which shows exactly what will happen and asks to confirm. A backup is written first. In rooms mode, a series shows *2 occ.*: its occurrences in the period, the only ones acted on; the copies show the *Occurrence* column.
 4. The statuses and the copies are updated; **Open the report** shows the HTML report of the action.
 5. **Restore...** undoes a Remove: the run just done in the window, or the folder of another run. The plan is shown and confirmed, then the copies come back (chapter 4).
+
+![A search in progress](images/gui-progress-light.png)
+
+During a run, the bar of the *Progress* card gives the step, what it counts, the part done and the **time left** (told once the step has run 2 s and 2 %); while nothing is counted yet, it moves and shows the time since the start, and it stops while a question is asked. The button of the window in the taskbar shows the same progress — yellow once *Stop* is requested. The console shows the time left at the end of its progress line.
 
 ![After Cancel and clean](images/gui-done-light.png)
 
 ![After Restore...](images/gui-restore-light.png)
 
-*Stop* ends a run at the next Graph call; closing the window during a run stops it first. During a transfer, the meetings being re-created (by groups of 20) are finished first: created, sent and old copies removed.
+The search and the actions run in the background (a second PowerShell runspace, opened with the window): the window stays responsive during a long run — thousands of mailboxes, thousands of meetings. *Stop* ends a run at the next Graph call; closing the window during a run stops it first. During a transfer, the meetings being re-created (by groups of 20) are finished first: created, sent and old copies removed.
 
 <!-- icon: chart -->
 ## 10. Reading the report
@@ -471,9 +480,12 @@ CSV files are UTF-8 with BOM; cells starting with `=`, `+`, `-`, `@` are prefixe
 | `src\MeetingCleanup.Restore.ps1` | Restore: Exchange Online PowerShell, Recoverable Items, verification, silent answer. |
 | `src\MeetingCleanup.Transfer.ps1` | Transfer: plan, Exchange Online (`Invoke-ChangeMeetingOrganizer`) or re-creation (create, shape, invite, old copies). |
 | `src\MeetingCleanup.Report.ps1` · `templates\Report.template.html` | CSV, JSON and HTML. |
-| `src\MeetingCleanup.Gui.ps1` | WPF window with the Fluent theme. |
+| `src\MeetingCleanup.Gui.ps1` | WPF window with the Fluent theme; searches and actions in a background runspace. |
+| `src\MeetingCleanup.Native.cs` | Compiled helper (C#, built by `Add-Type` when the module loads): meeting and copy objects, filter of the events, totals, CSV and JSON of the report, rows of the window. |
 
 **Graph requests.** Everything goes through `$batch` calls of 20 requests, 16 calls in flight, never more than 4 requests at a time for the same mailbox (limit of Exchange Online). A 429 or 5xx is retried after its *Retry-After*; the token is renewed 5 minutes before it expires.
+
+**Window.** The window thread only draws: a run is handed to a second runspace (`Start-MclGuiWork`), which sends its lines through a queue read every 100 ms (`Step-MclGuiWork`); the result comes back at the end. *Stop* and the confirmations of a run go through a shared synchronized table.
 
 <!-- icon: clock -->
 ## 13. Performance and limits
@@ -487,6 +499,13 @@ CSV files are UTF-8 with BOM; cells starting with `=`, `+`, `-`, `@` are prefixe
 | *Restore* of 11 copies in 5 mailboxes (3 with the same subject in one room) | 29 s, of which about 10 s to connect Exchange Online PowerShell |
 | Rooms mode, 2 rooms over 10 days: 6 meetings, 3 series limited to 5 occurrences, *Cancel* | 17 s; 8 cancellations, 16 copies removed |
 | *Transfer* of 6 meetings of a deleted organizer (2 series), re-created | 49 s; 6 invitations, 10 old copies removed |
+| Window, 1,858 room mailboxes searched (1.2.1) | 2 min; the window never waited more than 163 ms |
+
+On the computer, once Graph has answered (600 meetings, 4,200 copies, `tools\Measure-MeetingCleanup.ps1`): objects 1.1 s, totals 0.05 s, plan of a Remove 0.2 s, report 1.0 s, list of the window filled in 0.25 s — four to eight times less than 1.2.0 (`CHANGELOG.md`); loading the module takes about a second more (its C# part is compiled then). To measure another volume:
+
+```powershell
+pwsh -STA -File .\tools\Measure-MeetingCleanup.ps1 -Meetings 2000 -Search -Gui
+```
 
 - **Exchange Online only**: a mailbox on-premises (hybrid) cannot be opened by Graph (*MailboxNotEnabledForRESTAPI*); it is listed as not processed.
 - **Rooms**: an occurrence removed is not restorable (not in Recoverable Items). A series is limited to its occurrences in the period held by the rooms; *Cancel* sends one cancellation per occurrence. A rooms search cannot be transferred (search the organizers).
@@ -507,16 +526,24 @@ CSV files are UTF-8 with BOM; cells starting with `=`, `+`, `-`, `@` are prefixe
 .\Run-Tests.ps1      # Pester 6.1+, simulated tenant, no network
 ```
 
-`tests\MeetingCleanup.FakeGraph.ps1` replaces the transport with a simulated Exchange Online that behaves like the lab: the same iCalUId in every copy, room copies with the organizer's name as subject, the attendee list in every copy, a filter on the organizer refused, a cancellation sent whenever the organizer's meeting is removed or cancelled, groups delivered to their members, a copy removed marked *Declined* at the organizer and kept in Recoverable Items (with a new EntryID), `Get-RecoverableItems` and `Restore-RecoverableItems` simulated; each occurrence with its own ID (cancel, removal, move), a meeting created without attendees then invited by `PATCH`, `Invoke-ChangeMeetingOrganizer` simulated. The tests cover the configuration, the request, the connection and the permissions, the scheduler (20 per `$batch`, 4 per mailbox, retries, pages), every case of chapter 3, a list of organizers, Remove and Cancel, the backup, Restore (copies with the same subject, already present, not found, cancelled, a report of 1.0.0), the rooms mode (occurrences in the period, a series whole or not, an occurrence moved to another room, occurrences not read), the transfer (native, refused, re-created with its occurrences, an occurrence moved from a past slot, a series that does not match, a deleted, soft-deleted or not looked-up organizer, a failed invitation, a replayed report, a rooms search refused, Stop held), the report and its replay, the window and the command line.
+`tests\MeetingCleanup.FakeGraph.ps1` replaces the transport with a simulated Exchange Online that behaves like the lab: the same iCalUId in every copy, room copies with the organizer's name as subject, the attendee list in every copy, a filter on the organizer refused, a cancellation sent whenever the organizer's meeting is removed or cancelled, groups delivered to their members, a copy removed marked *Declined* at the organizer and kept in Recoverable Items (with a new EntryID), `Get-RecoverableItems` and `Restore-RecoverableItems` simulated; each occurrence with its own ID (cancel, removal, move), a meeting created without attendees then invited by `PATCH`, `Invoke-ChangeMeetingOrganizer` simulated. The tests cover the configuration, the request, the connection and the permissions, the scheduler (20 per `$batch`, 4 per mailbox, retries, pages), every case of chapter 3, a list of organizers, Remove and Cancel, the backup, Restore (copies with the same subject, already present, not found, cancelled, a report of 1.0.0), the rooms mode (occurrences in the period, a series whole or not, an occurrence moved to another room, occurrences not read), the transfer (native, refused, re-created with its occurrences, an occurrence moved from a past slot, a series that does not match, a deleted, soft-deleted or not looked-up organizer, a failed invitation, a replayed report, a rooms search refused, Stop held), the report and its replay, the window (a search and a Remove, a plan built in the background then declined, the progress bar, the time left and the taskbar button) and the command line.
 
 <!-- icon: book -->
 ## 15. Documentation and package
 
+| Guide | Source | For |
+|---|---|---|
+| **User guide** | `docs\MeetingCleanup-UserGuide.md` | The people who run the tool: prerequisites and everyday commands only. |
+| **Developer guide** | `docs\MeetingCleanup-Guide.md` (this guide) | Everything else: how it works, rights, configuration, window, report, architecture, tests. |
+
+A link from one guide to the other is written with its GitHub anchor (`MeetingCleanup-Guide.md#5-application`): GitHub follows it, and the HTML build points it to the HTML file of the other guide.
+
 ```powershell
 .\tools\New-DocumentationImages.ps1     # window and report images, from fictitious data
-.\tools\Build-Documentation.ps1         # this guide in HTML (self-contained)
-.\tools\New-ReadmeImages.ps1            # the graphics of the GitHub page (light and dark), after the HTML guide
-.\tools\New-MeetingCleanupPackage.ps1   # package: run-time files and the HTML guide only
+.\tools\Build-Documentation.ps1         # both guides in HTML (self-contained, light and dark)
+.\tools\New-ReadmeImages.ps1            # the graphics of the GitHub page (light and dark), after the HTML guides
+.\tools\New-MeetingCleanupPackage.ps1   # package: run-time files and both HTML guides only
+.\tools\Measure-MeetingCleanup.ps1      # time of the steps on a large synthetic volume (chapter 13)
 ```
 
 # Appendices
@@ -538,6 +565,8 @@ CSV files are UTF-8 with BOM; cells starting with `=`, `+`, `-`, `@` are prefixe
 | Attendees received a cancellation after *Remove* | Someone removed the meeting from the organizer's calendar later (that always sends one), or *Cancel* was used. |
 | *Confirmation needed: run interactively, or add -Force* | Remove or Cancel without a console (scheduled task): add `-Force`. |
 | The window shows “The pipeline has been stopped” | The command that opened it was stopped (*Stop* in an editor): close it and run `-Gui` again. |
+| *Meeting Cleanup 1.2.0 is already loaded in this PowerShell session* | The compiled part of another version is loaded in this process (it cannot be unloaded): open a new PowerShell window. |
+| *Cannot add type* · *... is not allowed in this language mode* when the module loads | PowerShell runs in *Constrained Language* mode (AppLocker or App Control policy): the tool needs *Full Language* (a folder allowed by the policy, or signed scripts). |
 | *The restore needs the module ExchangeOnlineManagement 3.2 or later* | `Install-Module ExchangeOnlineManagement -Scope CurrentUser -Force` for the account that runs the tool. |
 | *Get-RecoverableItems is not available ...: it needs the role Mailbox Import Export* | The application (or administrator) is not in a role group with *Mailbox Import Export*, or the change is not applied yet (up to an hour). Chapter 5. |
 | Restore: `UnAuthorized` / `AADSTS` when connecting Exchange Online | `Exchange.ManageAsApp` missing or without consent, or `Tenant.Organization` is not the initial domain (`contoso.onmicrosoft.com`). |

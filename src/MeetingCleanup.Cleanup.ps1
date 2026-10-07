@@ -23,48 +23,64 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.0
+    Version : 1.2.2
 #>
 
 function Get-MclCleanupPlan {
     <# What an action would do on the selected meetings, without doing it (confirmation, window, banner). #>
     param([Parameter(Mandatory = $true)][pscustomobject]$Result, [Parameter(Mandatory = $true)][ValidateSet('Remove', 'Cancel')][string]$Action)
 
-    $selected = @($Result.Meetings | Where-Object Selected)
+    $fast = [MeetingCleanupNative.Fast]
     $cancel = [Collections.Generic.List[object]]::new()
     $remove = [Collections.Generic.List[object]]::new()
     $keep = [Collections.Generic.List[object]]::new()
     $held = [Collections.Generic.List[object]]::new()
     $acted = [Collections.Generic.List[object]]::new()
-    foreach ($m in $selected) {
+    $series = 0; $attendees = 0; $invited = 0; $occMeetings = 0; $occurrences = 0; $cancelOccurrences = 0; $removeRooms = 0
+    $removeMailboxes = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $keptMeetings = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($m in $Result.Meetings) {
+        if (-not $m.Selected) { continue }
         # Left as they are: a meeting moved by Exchange Online (Transfer report replayed: its copies ARE the moved
         # meeting), and for Cancel a meeting whose organizer copy could not be read (removing the other copies
         # would leave his meeting live, and his next update would send it again).
-        $why = if ([string](Get-MclProperty $m 'TransferMethod') -eq 'Native' -and [string](Get-MclProperty $m 'ReportStatus') -in 'Transferred', 'Partial') { "moved by Exchange Online to $(Get-MclProperty $m 'NewOrganizer'): its copies are the moved meeting" }
+        $why = if ($fast::Text($m, 'TransferMethod') -eq 'Native' -and $fast::Text($m, 'ReportStatus') -in 'Transferred', 'Partial') { "moved by Exchange Online to $($fast::Text($m, 'NewOrganizer')): its copies are the moved meeting" }
             elseif ($Action -eq 'Cancel' -and [string]$m.OrganizerCopy -eq 'Not read') { "the copy of its organizer could not be read: it cannot be cancelled" }
             else { '' }
         if ($why) { $held.Add([pscustomobject]@{ Meeting = $m; Reason = $why }); continue }
         $acted.Add($m)
+        if ($m.Kind -eq 'Series') { $series++ }
+        if ($fast::Text($m, 'Scope') -eq 'Occurrences') { $occMeetings++; $occurrences += [int]$fast::Prop($m, 'Occurrences') }
+        $list = @($m.Attendees)
+        foreach ($a in $list) { if ($a.Type -ne 'resource') { $attendees++ } }
+        $withOrganizer = $false
         # The meeting of a new organizer (Transfer report) is not an old copy: never removed by a replay.
-        foreach ($c in @($m.Copies | Where-Object { $_.EventId -and $_.Role -ne 'New organizer' })) {
-            if ($c.Role -eq 'Organizer') { if ($Action -eq 'Cancel') { $cancel.Add($c) } else { $keep.Add($c) } }
-            else { $remove.Add($c) }
+        foreach ($c in $m.Copies) {
+            if (-not $c.EventId -or $c.Role -eq 'New organizer') { continue }
+            if ($c.Role -eq 'Organizer') {
+                $withOrganizer = $true
+                if ($Action -eq 'Cancel') { $cancel.Add($c); if ($fast::Text($c, 'Occurrence')) { $cancelOccurrences++ } }
+                else { $keep.Add($c); [void]$keptMeetings.Add($c.MeetingId) }
+            }
+            else { $remove.Add($c); [void]$removeMailboxes.Add($c.Mailbox); if ($c.Role -eq 'Room') { $removeRooms++ } }
         }
+        if ($withOrganizer) { $invited += $list.Count }
     }
     $selected = $acted.ToArray()
-    $attendees = @($selected | ForEach-Object { @($_.Attendees) } | Where-Object { $_.Type -ne 'resource' })
     $dot = $script:Dot
     $lines = [Collections.Generic.List[string]]::new()
-    $lines.Add(('{0} meeting(s) selected ({1} series)' -f $selected.Count, @($selected | Where-Object Kind -eq 'Series').Count))
-    if ($cancel.Count) { $lines.Add(('{0} cancelled by the organizer: Exchange sends the cancellation message to their attendees ({1} invitation(s), external ones included)' -f $($n = @($cancel | Where-Object { (Get-MclProperty $_ 'Occurrence') }).Count; if ($n) { '{0} meeting(s) and {1} occurrence(s)' -f ($cancel.Count - $n), $n } else { $cancel.Count }), @($selected | Where-Object { @($_.Copies | Where-Object { $_.Role -eq 'Organizer' -and $_.EventId }).Count } | ForEach-Object { @($_.Attendees).Count } | Measure-Object -Sum).Sum)) }
-    $lines.Add(('{0} cop{1} removed without any message in {2} mailbox(es): {3} attendee(s), {4} room(s)' -f $remove.Count, $(if ($remove.Count -eq 1) { 'y' } else { 'ies' }), @($remove | ForEach-Object Mailbox | Select-Object -Unique).Count, @($remove | Where-Object Role -ne 'Room').Count, @($remove | Where-Object Role -eq 'Room').Count))
-    if ($keep.Count) { $lines.Add(('{0} meeting(s) stay in the calendar of their organizer (removing them there would send a cancellation: choose Cancel to do it)' -f @($keep | ForEach-Object MeetingId | Select-Object -Unique).Count)) }
-    $occ = @($selected | Where-Object Scope -eq 'Occurrences')
-    if ($occ.Count) { $lines.Add(('{0} series limited to their occurrences in the period ({1} occurrence(s)): an occurrence removed is not kept in Recoverable Items, it cannot be restored' -f $occ.Count, (@($occ | ForEach-Object Occurrences) | Measure-Object -Sum).Sum)) }
-    if ($held.Count) { $lines.Add(('{0} meeting(s) left as they are: {1}' -f $held.Count, ((@($held | Group-Object Reason | ForEach-Object { "$($_.Count) $($_.Name)" })) -join '; '))) }
-    [pscustomobject]@{ Action = $Action; Meetings = $selected; Cancel = $cancel.ToArray(); Remove = $remove.ToArray(); Keep = $keep.ToArray(); Held = $held.ToArray(); Lines = $lines.ToArray(); Attendees = $attendees.Count; Text = ($lines -join " $dot ") }
+    $lines.Add(('{0} meeting(s) selected ({1} series)' -f $selected.Count, $series))
+    if ($cancel.Count) { $lines.Add(('{0} cancelled by the organizer: Exchange sends the cancellation message to their attendees ({1} invitation(s), external ones included)' -f $(if ($cancelOccurrences) { '{0} meeting(s) and {1} occurrence(s)' -f ($cancel.Count - $cancelOccurrences), $cancelOccurrences } else { $cancel.Count }), $invited)) }
+    $lines.Add(('{0} cop{1} removed without any message in {2} mailbox(es): {3} attendee(s), {4} room(s)' -f $remove.Count, $(if ($remove.Count -eq 1) { 'y' } else { 'ies' }), $removeMailboxes.Count, ($remove.Count - $removeRooms), $removeRooms))
+    if ($keep.Count) { $lines.Add(('{0} meeting(s) stay in the calendar of their organizer (removing them there would send a cancellation: choose Cancel to do it)' -f $keptMeetings.Count)) }
+    if ($occMeetings) { $lines.Add(('{0} series limited to their occurrences in the period ({1} occurrence(s)): an occurrence removed is not kept in Recoverable Items, it cannot be restored' -f $occMeetings, $occurrences)) }
+    if ($held.Count) {
+        $reasons = [ordered]@{}
+        foreach ($h in $held) { $reasons[$h.Reason] = 1 + [int]$reasons[$h.Reason] }
+        $lines.Add(('{0} meeting(s) left as they are: {1}' -f $held.Count, ((@($reasons.Keys | ForEach-Object { "$($reasons[$_]) $_" })) -join '; ')))
+    }
+    [pscustomobject]@{ Action = $Action; Meetings = $selected; Cancel = $cancel.ToArray(); Remove = $remove.ToArray(); Keep = $keep.ToArray(); Held = $held.ToArray(); Lines = $lines.ToArray(); Attendees = $attendees; Text = ($lines -join " $dot ") }
 }
-
 function Set-MclCopyResult {
     param($Copy, [string]$Action, $Response, [string]$Success)
     $Copy.Action = $Action
@@ -84,11 +100,10 @@ function Save-MclBackup {
     #>
     param([Parameter(Mandatory = $true)][pscustomobject]$Result, [Parameter(Mandatory = $true)][pscustomobject]$Plan, [Parameter(Mandatory = $true)][string]$Path)
 
-    $rank = @{ Organizer = 0; Attendee = 1; Room = 2 }
     $meetings = @($Plan.Meetings)
     $refs = @{}
     $requests = foreach ($m in $meetings) {
-        $ref = $m.Copies | Where-Object { $_.EventId -and $_.Role -in 'Organizer', 'Attendee', 'Room' } | Sort-Object { $rank[$_.Role] } | Select-Object -First 1
+        $ref = Get-MclBestCopy $m -OrganizerAttendeeRoomOnly
         if (-not $ref) { continue }
         $refs[$m.MeetingId] = $ref
         # An occurrence: the series is saved (its master), with every occurrence of the copies listed below.
@@ -97,22 +112,30 @@ function Save-MclBackup {
     }
     $res = Invoke-MclGraphBatch -Requests @($requests) -OnProgress { param($done, $total) Write-MclProgress ($done / [Math]::Max(1, $total)) ('{0:N0}/{1:N0} meetings saved' -f $done, $total) }
     $unread = 0
+    $saved = 0
+    $fast = [MeetingCleanupNative.Fast]
     $items = foreach ($m in $meetings) {
         $ref = $refs[$m.MeetingId]
         $r = if ($ref) { $res[$m.MeetingId] } else { $null }
         if (-not $r -or $r.Status -ne 200) { $unread++ }
+        $copies = [Collections.Generic.List[object]]::new()
+        foreach ($c in $m.Copies) {
+            if (-not $c.EventId) { continue }
+            $copies.Add([ordered]@{ Mailbox = $c.Mailbox; Role = $c.Role; EventId = $c.EventId; Subject = $c.Subject; Response = $c.Response; ShowAs = $c.ShowAs; Occurrence = $fast::Text($c, 'Occurrence'); SeriesId = $fast::Text($c, 'SeriesId') })
+        }
+        $saved += $copies.Count
         [ordered]@{
             MeetingId = $m.MeetingId; Subject = $m.Subject; Organizer = $m.Organizer; OrganizerName = $m.OrganizerName; Kind = $m.Kind; StartText = $m.StartText; EndText = $m.EndText
             ReferenceMailbox = if ($ref) { $ref.Mailbox } else { '' }
             Event = if ($r -and $r.Status -eq 200) { $r.Body } else { $null }
-            Scope = [string](Get-MclProperty $m 'Scope')
-            Copies = @($m.Copies | Where-Object EventId | ForEach-Object { [ordered]@{ Mailbox = $_.Mailbox; Role = $_.Role; EventId = $_.EventId; Subject = $_.Subject; Response = $_.Response; ShowAs = $_.ShowAs; Occurrence = [string](Get-MclProperty $_ 'Occurrence'); SeriesId = [string](Get-MclProperty $_ 'SeriesId') } })
+            Scope = $fast::Text($m, 'Scope')
+            Copies = $copies.ToArray()
         }
     }
     $backup = [ordered]@{ Tool = 'Meeting Cleanup'; Version = $script:ToolVersion; Kind = 'Backup'; CreatedUtc = [datetime]::UtcNow.ToString('o'); Action = $Plan.Action; Tenant = $Result.Tenant; Meetings = @($items) }
     [void][IO.Directory]::CreateDirectory((Split-Path $Path -Parent))
     [IO.File]::WriteAllText($Path, (ConvertTo-Json -InputObject $backup -Depth 32), [Text.UTF8Encoding]::new($false))
-    Write-MclItem Ok ('Backup of {0} meeting(s) and {1} cop{2} before any change: {3}' -f $meetings.Count, @($items | ForEach-Object { $_.Copies }).Count, $(if (@($items | ForEach-Object { $_.Copies }).Count -eq 1) { 'y' } else { 'ies' }), $Path) -Icon File
+    Write-MclItem Ok ('Backup of {0} meeting(s) and {1} cop{2} before any change: {3}' -f $meetings.Count, $saved, $(if ($saved -eq 1) { 'y' } else { 'ies' }), $Path) -Icon File
     if ($unread) { Write-MclItem Warn "$unread meeting(s) could not be read for the backup (already gone, or the mailbox is not reachable): their state is in the report." }
     return $Path
 }
@@ -128,11 +151,18 @@ function Remove-MclCopyWaves {
     param([Parameter(Mandatory = $true)][object[]]$Copies, [string]$ProgressText = 'copies removed')
     # Waves: the n-th copy of each (mailbox, subject) group in wave n. A copy alone in its group is in wave 0.
     # An occurrence never goes to Recoverable Items (nothing to restore by order): always in wave 0.
+    $groups = [ordered]@{}
+    foreach ($c in $Copies) {
+        $key = if ([MeetingCleanupNative.Fast]::Text($c, 'Occurrence')) { "occ|$($c.Mailbox)|$($c.EventId)" } else { '{0}|{1}' -f $c.Mailbox, ([string]$c.Subject).Trim().ToLowerInvariant() }
+        $list = $groups[$key]
+        if (-not $list) { $list = [Collections.Generic.List[object]]::new(); $groups[$key] = $list }
+        $list.Add($c)
+    }
     $waves = [Collections.Generic.List[object]]::new()
-    foreach ($grp in ($Copies | Group-Object { if ((Get-MclProperty $_ 'Occurrence')) { "occ|$($_.Mailbox)|$($_.EventId)" } else { '{0}|{1}' -f $_.Mailbox, ([string]$_.Subject).Trim().ToLowerInvariant() } })) {
-        for ($k = 0; $k -lt $grp.Count; $k++) {
+    foreach ($list in $groups.Values) {
+        for ($k = 0; $k -lt $list.Count; $k++) {
             while ($waves.Count -le $k) { $waves.Add([Collections.Generic.List[object]]::new()) }
-            $waves[$k].Add($grp.Group[$k])
+            $waves[$k].Add($list[$k])
         }
     }
     $removeTotal = $Copies.Count; $before = 0
@@ -227,7 +257,7 @@ function Invoke-MclCleanup {
             if ($c.Result -eq 'Failed') { [void]$failedMeetings.Add($c.MeetingId); Write-MclItem Fail "Cancel $($c.Mailbox): $($c.Detail)" }
         }
         $sent = @($plan.Cancel | Where-Object Result -eq 'Cancelled')
-        $occ = @($sent | Where-Object { (Get-MclProperty $_ 'Occurrence') }).Count
+        $occ = 0; foreach ($c in $sent) { if ([MeetingCleanupNative.Fast]::Text($c, 'Occurrence')) { $occ++ } }
         Write-MclItem $(if ($failedMeetings.Count) { 'Warn' } else { 'Ok' }) ('{0} cancelled by the organizer {1} {2} failed' -f $(if ($occ) { '{0} meeting(s) and {1} occurrence(s)' -f ($sent.Count - $occ), $occ } else { '{0} meeting(s)' -f $sent.Count }), $dot, $failedMeetings.Count) -Icon Cancel
     }
     foreach ($c in $plan.Keep) {
@@ -236,18 +266,23 @@ function Invoke-MclCleanup {
     }
 
     # ---- copies of the attendees and the rooms: permanentDelete (silent) -----------------------------
-    $toRemove = @($plan.Remove | Where-Object { -not $failedMeetings.Contains($_.MeetingId) })
-    foreach ($c in @($plan.Remove | Where-Object { $failedMeetings.Contains($_.MeetingId) })) { $c.Action = 'None'; $c.Result = 'Not done'; $c.Detail = 'the cancellation by the organizer failed: copy left as it was' }
+    $toRemove = [Collections.Generic.List[object]]::new()
+    foreach ($c in $plan.Remove) {
+        if ($failedMeetings.Contains($c.MeetingId)) { $c.Action = 'None'; $c.Result = 'Not done'; $c.Detail = 'the cancellation by the organizer failed: copy left as it was' }
+        else { $toRemove.Add($c) }
+    }
     if ($toRemove.Count) {
-        Remove-MclCopyWaves -Copies $toRemove -ProgressText 'copies removed'
-        $failed = @($toRemove | Where-Object Result -eq 'Failed')
-        Write-MclItem $(if ($failed.Count) { 'Warn' } else { 'Ok' }) ('{0} cop{1} removed {2} {3} already gone {2} {4} failed' -f @($toRemove | Where-Object Result -eq 'Removed').Count, $(if (@($toRemove | Where-Object Result -eq 'Removed').Count -eq 1) { 'y' } else { 'ies' }), $dot, @($toRemove | Where-Object Result -eq 'Already gone').Count, $failed.Count) -Icon Trash
+        Remove-MclCopyWaves -Copies $toRemove.ToArray() -ProgressText 'copies removed'
+        $removed = 0; $gone = 0; $failed = [Collections.Generic.List[object]]::new()
+        foreach ($c in $toRemove) { switch ($c.Result) { 'Removed' { $removed++ } 'Already gone' { $gone++ } 'Failed' { $failed.Add($c) } } }
+        Write-MclItem $(if ($failed.Count) { 'Warn' } else { 'Ok' }) ('{0} cop{1} removed {2} {3} already gone {2} {4} failed' -f $removed, $(if ($removed -eq 1) { 'y' } else { 'ies' }), $dot, $gone, $failed.Count) -Icon Trash
         foreach ($c in ($failed | Select-Object -First 5)) { Write-MclItem Fail "$($c.Mailbox): $($c.Detail)" }
     }
     elseif (-not $plan.Cancel.Count) { Write-MclItem Skip 'No copy to remove in the attendees and the rooms.' }
 
     # ---- verify ------------------------------------------------------------------------------------
-    $done = @($plan.Cancel + $plan.Remove | Where-Object { $_.Result -in 'Removed', 'Cancelled' })
+    $done = [Collections.Generic.List[object]]::new()
+    foreach ($c in @($plan.Cancel) + @($plan.Remove)) { if ($c.Result -in 'Removed', 'Cancelled') { $done.Add($c) } }
     if ($Settings.Verify -and $done.Count) {
         Write-MclNextStep 'Verify' 'Search'
         $requests = for ($i = 0; $i -lt $done.Count; $i++) {
@@ -266,18 +301,25 @@ function Invoke-MclCleanup {
 
     # ---- status of each meeting and of the run -------------------------------------------------------
     foreach ($m in @($plan.Meetings)) {
-        $acted = @($m.Copies | Where-Object { $_.Action -in 'Remove', 'Cancel' })
-        $ok = @($acted | Where-Object { $_.Result -in 'Removed', 'Cancelled', 'Already gone' })
-        $bad = @($m.Copies | Where-Object { $_.Result -in 'Failed', 'Not done' })
-        $m.Status = if ($bad.Count -and $ok.Count) { 'Partial' } elseif ($bad.Count) { 'Failed' }
-            elseif (@($m.Copies | Where-Object { $_.Action -eq 'Cancel' -and $_.Result -eq 'Cancelled' }).Count) { 'Cancelled' }
-            elseif ($ok.Count) { 'Removed' } elseif (@($m.Copies | Where-Object Result -eq 'Kept').Count) { 'Kept' } else { 'Nothing to do' }
-        if ($Action -eq 'Cancel' -and -not @($m.Copies | Where-Object Action -eq 'Cancel').Count -and $ok.Count) { $m.Notes.Add('No meeting in the organizer''s calendar to cancel: the copies were removed without a message.') }
+        $ok = 0; $bad = 0; $cancelled = $false; $cancelTried = $false; $kept = $false
+        foreach ($c in $m.Copies) {
+            if ($c.Action -in 'Remove', 'Cancel' -and $c.Result -in 'Removed', 'Cancelled', 'Already gone') { $ok++ }
+            if ($c.Result -in 'Failed', 'Not done') { $bad++ }
+            if ($c.Action -eq 'Cancel') { $cancelTried = $true; if ($c.Result -eq 'Cancelled') { $cancelled = $true } }
+            if ($c.Result -eq 'Kept') { $kept = $true }
+        }
+        $m.Status = if ($bad -and $ok) { 'Partial' } elseif ($bad) { 'Failed' } elseif ($cancelled) { 'Cancelled' } elseif ($ok) { 'Removed' } elseif ($kept) { 'Kept' } else { 'Nothing to do' }
+        if ($Action -eq 'Cancel' -and -not $cancelTried -and $ok) { $m.Notes.Add('No meeting in the organizer''s calendar to cancel: the copies were removed without a message.') }
     }
     Update-MclResultCounts $Result
-    $selected = @($Result.Meetings | Where-Object Selected)
-    $Result.Status = if ($selected.Count -and -not @($selected | Where-Object { $_.Status -notin 'Failed' }).Count) { 'Failed' }
-        elseif (@($selected | Where-Object { $_.Status -in 'Partial', 'Failed' }).Count -or $plan.Held.Count) { 'Warning' } else { 'Completed' }
+    $selectedCount = 0; $failedCount = 0; $warned = $false
+    foreach ($m in $Result.Meetings) {
+        if (-not $m.Selected) { continue }
+        $selectedCount++
+        if ($m.Status -eq 'Failed') { $failedCount++ }
+        if ($m.Status -in 'Partial', 'Failed') { $warned = $true }
+    }
+    $Result.Status = if ($selectedCount -and $failedCount -eq $selectedCount) { 'Failed' } elseif ($warned -or $plan.Held.Count) { 'Warning' } else { 'Completed' }
     $Result.CompletedUtc = [datetime]::UtcNow.ToString('o')
     $Result.DurationSeconds = [Math]::Round($Result.DurationSeconds + ([datetime]::UtcNow - $started).TotalSeconds, 1)
     $Result | Add-Member -NotePropertyName CleanupComment -NotePropertyValue $(if ($Action -eq 'Cancel') { [string]$Comment } else { '' }) -Force

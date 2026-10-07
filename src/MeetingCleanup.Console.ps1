@@ -13,7 +13,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.0
+    Version : 1.2.2
 #>
 
 $script:C = @{ Reset = ''; Bold = ''; Dim = ''; Accent = ''; AccentBg = ''; Green = ''; Yellow = ''; Red = ''; Blue = ''; White = '' }
@@ -31,6 +31,8 @@ $script:IconStyle = if ($env:MCL_ICONS -in 'Emoji', 'Symbols', 'Ascii') { $env:M
     else { 'Symbols' }
 $script:Dot = [char]0x00B7
 $script:ProgressShown = $false
+# The progress in course (Get-MclProgressEta): its label, when and where it began.
+$script:ProgressEta = $null
 
 function Get-MclIconSet {
     <# Icons of one console style. Symbols: only characters of the classic console fonts. #>
@@ -106,9 +108,15 @@ function Format-MclText {
 }
 
 function Send-MclUi {
-    <# Forwards a console line to the window while a window run is in progress. #>
+    <#
+        Forwards a console line to the window while a window run is in progress: into the queue the window reads
+        (background run, Ui.Queue) or to its sink (Ui.Sink).
+    #>
     param([string]$Status, [string]$Text)
-    if ($script:Ui -and $script:Ui.Sink) { & $script:Ui.Sink $Status $Text }
+    $u = $script:Ui
+    if (-not $u) { return }
+    if ($u.Queue) { $u.Queue.Enqueue([string[]]@($Status, $Text)) }
+    elseif ($u.Sink) { & $u.Sink $Status $Text }
 }
 
 function Start-MclLog {
@@ -119,8 +127,10 @@ function Start-MclLog {
     [void][IO.Directory]::CreateDirectory($Directory)
     $script:LogPath = Join-Path $Directory ('MeetingCleanup_{0:yyyyMMdd}.log' -f (Get-Date))
     $stream = [IO.FileStream]::new($script:LogPath, [IO.FileMode]::Append, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
-    $script:LogWriter = [IO.StreamWriter]::new($stream, [Text.UTF8Encoding]::new($false))
-    $script:LogWriter.AutoFlush = $true
+    $writer = [IO.StreamWriter]::new($stream, [Text.UTF8Encoding]::new($false))
+    $writer.AutoFlush = $true
+    # Synchronized: the window and its background run write to the same log.
+    $script:LogWriter = [IO.TextWriter]::Synchronized($writer)
     $limit = (Get-Date).AddDays(-$RetentionDays)
     Get-ChildItem -LiteralPath $Directory -Filter 'MeetingCleanup_*.log' -File -ErrorAction SilentlyContinue |
         Where-Object LastWriteTime -lt $limit | Remove-Item -Force -ErrorAction SilentlyContinue
@@ -199,6 +209,7 @@ function Write-MclStep {
     )
 
     Write-MclLog 'STEP' "[$Number/$Total] $Title"
+    $script:ProgressEta = $null
     Send-MclUi 'Step' "[$Number/$Total] $Title"
     if ($script:Quiet) { return }
     Clear-MclProgress
@@ -226,20 +237,66 @@ function Write-MclItem {
     Write-Host ('      {0}{1}{2}{3}{4}{2}' -f $color, $symbol, $script:C.Reset, $textColor, $Text)
 }
 
+function Format-MclTimeLeft {
+    <#
+        The time left of a progress, rounded as a person would say it: a few seconds, about 25 s (5 s steps under a
+        minute), about 1 min 30 s (10 s steps under 5 minutes), about 12 min, about 1 h 05 min.
+    #>
+    param([Parameter(Mandatory = $true)][double]$Seconds)
+
+    $inv = [Globalization.CultureInfo]::InvariantCulture
+    if ($Seconds -lt 10) { return 'a few seconds left' }
+    $away = [MidpointRounding]::AwayFromZero
+    $r = [int]$(if ($Seconds -lt 60) { [Math]::Ceiling($Seconds / 5) * 5 } elseif ($Seconds -lt 300) { [Math]::Round($Seconds / 10, $away) * 10 } else { [Math]::Round($Seconds / 60, $away) * 60 })
+    if ($r -lt 60) { return [string]::Format($inv, 'about {0} s left', $r) }
+    $h = [int][Math]::Floor($r / 3600); $m = [int][Math]::Floor(($r % 3600) / 60); $s = $r % 60
+    if ($h) { return [string]::Format($inv, 'about {0} h {1:00} min left', $h, $m) }
+    if ($s) { return [string]::Format($inv, 'about {0} min {1:00} s left', $m, $s) }
+    return [string]::Format($inv, 'about {0} min left', $m)
+}
+
+function Get-MclProgressEta {
+    <#
+        Time left of the progress in course, from its speed since it began; empty until it can be told (2 s and
+        2 % of progress since its first value). Another label (the counts aside), or a value going back, is a
+        new progress. A step starts with none (Write-MclStep). -Now: tests.
+    #>
+    param([Parameter(Mandatory = $true)][double]$Fraction, [AllowEmptyString()][string]$Text, [datetime]$Now = [datetime]::UtcNow)
+
+    $key = $Text -replace '[\d\s,.\u00A0\u202F/]+', ''
+    $s = $script:ProgressEta
+    if (-not $s -or $s.Key -ne $key -or $Fraction -lt $s.Last) {
+        $script:ProgressEta = @{ Key = $key; Start = $Now; From = $Fraction; Last = $Fraction; Left = -1.0; At = $Now }
+        return ''
+    }
+    $s.Last = $Fraction
+    $done = $Fraction - $s.From
+    $elapsed = ($Now - $s.Start).TotalSeconds
+    if ($Fraction -ge 1 -or $done -lt 0.02 -or $elapsed -lt 2) { return '' }
+    $left = $elapsed / $done * (1 - $Fraction)
+    # Graph answers come in bursts (16 calls in flight): half the new figure, half the last one brought forward.
+    if ($s.Left -ge 0) { $left = 0.5 * $left + 0.5 * [Math]::Max(0.0, $s.Left - ($Now - $s.At).TotalSeconds) }
+    $s.Left = $left; $s.At = $Now
+    return Format-MclTimeLeft $left
+}
+
 function Write-MclProgress {
     <#
-        Live progress line, rewritten in place (interactive console); sent to the window during a window run.
-              ⏳  ███████░░░░░  58%  1,077/1,858 mailboxes · 12 meetings
+        Live progress line, rewritten in place (interactive console); sent to the window during a window run
+        (fraction|text|time left).
+              ⏳  ███████░░░░░  58%  1,077/1,858 mailboxes searched · about 40 s left
     #>
     param([Parameter(Mandatory = $true)][double]$Fraction, [Parameter(Mandatory = $true)][string]$Text)
 
-    Send-MclUi 'Progress' ('{0}|{1}' -f $Fraction.ToString('0.000', [Globalization.CultureInfo]::InvariantCulture), $Text)
+    $left = Get-MclProgressEta -Fraction $Fraction -Text $Text
+    Send-MclUi 'Progress' ('{0}|{1}|{2}' -f $Fraction.ToString('0.000', [Globalization.CultureInfo]::InvariantCulture), $Text, $left)
     if ($script:Quiet -or [Console]::IsOutputRedirected) { return }
     $C = $script:C
     $percent = [int][Math]::Floor(100 * [Math]::Min(1.0, [Math]::Max(0.0, $Fraction)))
     $filled = [int][Math]::Round(12 * $percent / 100.0)
     $bar = $C.Accent + [string]::new([char]0x2588, $filled) + $C.Dim + [string]::new([char]0x2591, 12 - $filled) + $C.Reset
-    $plain = Format-MclText $Text ([Math]::Max(10, (Get-MclConsoleWidth) - 30))
+    $line = if ($left) { "$Text $($script:Dot) $left" } else { $Text }
+    $plain = Format-MclText $line ([Math]::Max(10, (Get-MclConsoleWidth) - 30))
     [Console]::Write(("`r      {0}{1} {2,3}%  {3}{4}{5}" -f (Get-MclIcon 'Clock'), $bar, $percent, $C.Dim, $plain.TrimEnd(), $C.Reset))
     $script:ProgressShown = $true
 }

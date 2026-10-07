@@ -22,12 +22,12 @@
     the organizer has to send it again), a copy whose retention is over, a copy already back.
 
     Exchange Online PowerShell (module ExchangeOnlineManagement 3.2+) runs Get-RecoverableItems and
-    Restore-RecoverableItems: role Mailbox Import Export, which no role group has by default (guide,
+    Restore-RecoverableItems: role Mailbox Import Export, which no role group has by default (developer guide,
     chapter 5). Graph checks that each copy is back and answers the invitation again.
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.0
+    Version : 1.2.2
 #>
 
 $script:Exchange = $null
@@ -86,8 +86,8 @@ function Connect-MclExchange {
         $missing = if (-not $found) { $true } elseif ($For -eq 'Transfer') { -not ($found.Parameters.ContainsKey('EventId') -and $found.Parameters.ContainsKey('NewOrganizer')) } else { $false }
         if ($missing) {
             Disconnect-MclExchange
-            if ($For -eq 'Transfer') { throw "Invoke-ChangeMeetingOrganizer (with -EventId and -NewOrganizer) is not available to the $how`: it needs a role with these parameters (guide, chapter 5: role 'Meeting Organizer Transfer' from User Options). A change of role takes up to an hour. Or -TransferMethod Recreate (Microsoft Graph only)." }
-            throw "$cmd is not available to the $how`: it needs the role Mailbox Import Export (not in any role group by default). Guide, chapter 5: role group 'Meeting Cleanup Restore'. A change of role takes up to an hour."
+            if ($For -eq 'Transfer') { throw "Invoke-ChangeMeetingOrganizer (with -EventId and -NewOrganizer) is not available to the $how`: it needs a role with these parameters (developer guide, chapter 5: role 'Meeting Organizer Transfer' from User Options). A change of role takes up to an hour. Or -TransferMethod Recreate (Microsoft Graph only)." }
+            throw "$cmd is not available to the $how`: it needs the role Mailbox Import Export (not in any role group by default). Developer guide, chapter 5: role group 'Meeting Cleanup Restore'. A change of role takes up to an hour."
         }
     }
     Write-MclItem Ok "Exchange Online PowerShell connected: $how" -Icon Server

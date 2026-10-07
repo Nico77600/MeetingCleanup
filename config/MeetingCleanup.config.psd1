@@ -2,7 +2,7 @@
 #  Meeting Cleanup - configuration file
 #  --------------------------------------------------------------------------
 #  Author  : Nicolas Fabert
-#  Version : 1.2.0
+#  Version : 1.2.2
 #
 #  Read by Invoke-MeetingCleanup.ps1 and by the window (-Gui). It is a PowerShell data file: text between
 #  quotes, $true / $false, numbers, @( ) for lists and @{ } for groups of settings. Lines starting with #
@@ -22,7 +22,7 @@
     }
 
     # ---------------------------------------------------------------------
-    # Application registered in Microsoft Entra (guide, chapter 5). Application permissions of Microsoft
+    # Application registered in Microsoft Entra (developer guide, chapter 5). Application permissions of Microsoft
     # Graph, with admin consent:
     #   Calendars.ReadWrite   required (Calendars.Read is enough for a report without action)
     #   User.Read.All         addresses of the organizer, list of every mailbox
@@ -74,7 +74,7 @@
     # Restore (-Action Restore -FromReport <report of a Remove run>, or Restore... in the window).
     # The copies removed are in Recoverable Items of each mailbox for the retention of deleted items
     # (14 days by default). Exchange Online PowerShell (module ExchangeOnlineManagement 3.2+) puts them back:
-    # role Mailbox Import Export, in no role group by default (guide, chapter 5).
+    # role Mailbox Import Export, in no role group by default (developer guide, chapter 5).
     #   Connection: 'Application'  the same application and certificate: Exchange.ManageAsApp permission and
     #                              its service principal in a role group with Mailbox Import Export;
     #                              Tenant.Organization must be the initial domain (contoso.onmicrosoft.com)
@@ -95,7 +95,7 @@
     #   Method: 'Auto'      Exchange Online moves the meetings whose organizer is still active (account and
     #                       mailbox), the other ones are re-created by the new organizer
     #           'Native'    Exchange Online only (Invoke-ChangeMeetingOrganizer: Exchange Online PowerShell with
-    #                       the connection of the Restore section, role 'Meeting Organizer Transfer', guide chapter 5)
+    #                       the connection of the Restore section, role 'Meeting Organizer Transfer', developer guide chapter 5)
     #           'Recreate'  Microsoft Graph only: the new organizer sends one invitation, the old copies are removed
     #   Comment: the message of the old organizer when he is still active and his meeting is re-created
     #            ({0} = the new organizer). Plain text.

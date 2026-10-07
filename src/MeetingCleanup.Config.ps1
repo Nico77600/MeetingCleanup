@@ -16,7 +16,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.0
+    Version : 1.2.2
 #>
 
 # Section.Key of the configuration file -> key of the settings hashtable.
@@ -82,22 +82,21 @@ function Resolve-MclPath {
     return [IO.Path]::GetFullPath($Path, $Root)
 }
 
+$script:ZoneCache = @{}
+
 function Get-MclTimeZone {
-    <# Time zone of the dates: Report.TimeZone (IANA or Windows ID), the one of Windows when empty. #>
+    <# Time zone of the dates: Report.TimeZone (IANA or Windows ID), the one of Windows when empty. Looked up once per ID. #>
     param([AllowEmptyString()][AllowNull()][string]$Id)
     if ([string]::IsNullOrWhiteSpace($Id)) { return [TimeZoneInfo]::Local }
-    return [TimeZoneInfo]::FindSystemTimeZoneById($Id)
+    $zone = $script:ZoneCache[$Id]
+    if (-not $zone) { $zone = [TimeZoneInfo]::FindSystemTimeZoneById($Id); $script:ZoneCache[$Id] = $zone }
+    return $zone
 }
 
 function Format-MclDate {
     <# A UTC date shown in the time zone of the report: yyyy-MM-dd HH:mm (or yyyy-MM-dd). -PeriodEnd: an end at 00:00 shows the day before (included). #>
     param([AllowNull()][object]$Utc, [AllowEmptyString()][AllowNull()][string]$TimeZone, [switch]$DateOnly, [switch]$PeriodEnd)
-    if ($null -eq $Utc -or [string]$Utc -eq '') { return '' }
-    $d = if ($Utc -is [datetime]) { $Utc } else { [datetime]::Parse([string]$Utc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal -bor [Globalization.DateTimeStyles]::AssumeUniversal) }
-    $d = [datetime]::SpecifyKind($d.ToUniversalTime(), [DateTimeKind]::Utc)
-    $local = [TimeZoneInfo]::ConvertTimeFromUtc($d, (Get-MclTimeZone $TimeZone))
-    if ($PeriodEnd -and $local.TimeOfDay -eq [TimeSpan]::Zero) { $local = $local.AddDays(-1); $DateOnly = $true }
-    return $local.ToString($(if ($DateOnly) { 'yyyy-MM-dd' } else { 'yyyy-MM-dd HH:mm' }), [Globalization.CultureInfo]::InvariantCulture)
+    return [MeetingCleanupNative.Fast]::FormatDate($Utc, (Get-MclTimeZone $TimeZone), [bool]$DateOnly, [bool]$PeriodEnd)
 }
 
 function ConvertTo-MclUtc {
