@@ -19,11 +19,13 @@
                copies left in the attendees' and rooms' calendars are removed. A meeting no longer in the
                organizer's calendar (or with a deleted organizer) cannot be cancelled: its copies are removed.
 
-    A series is handled as a whole (the series master: every occurrence and exception).
+    A series is handled as a whole (the series master: every occurrence and exception), unless it was limited to
+    its occurrences in the period (rooms mode, -SeriesScope Occurrences): then each occurrence is acted on, and
+    the occurrences left out in the window (SkippedOccurrences) are left as they are.
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.3
+    Version : 1.3.0
 #>
 
 function Get-MclCleanupPlan {
@@ -36,6 +38,8 @@ function Get-MclCleanupPlan {
     $keep = [Collections.Generic.List[object]]::new()
     $held = [Collections.Generic.List[object]]::new()
     $acted = [Collections.Generic.List[object]]::new()
+    $notSelected = [Collections.Generic.List[object]]::new()
+    $skippedOccurrences = 0
     $series = 0; $attendees = 0; $invited = 0; $occMeetings = 0; $occurrences = 0; $cancelOccurrences = 0; $removeRooms = 0
     $removeMailboxes = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $keptMeetings = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -50,13 +54,17 @@ function Get-MclCleanupPlan {
         if ($why) { $held.Add([pscustomobject]@{ Meeting = $m; Reason = $why }); continue }
         $acted.Add($m)
         if ($m.Kind -eq 'Series') { $series++ }
-        if ($fast::Text($m, 'Scope') -eq 'Occurrences') { $occMeetings++; $occurrences += [int]$fast::Prop($m, 'Occurrences') }
+        # The occurrences left out in the window: their copies are left as they are.
+        $skip = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($k in @(Get-MclProperty $m 'SkippedOccurrences')) { if ($k) { [void]$skip.Add([string]$k) } }
+        if ($fast::Text($m, 'Scope') -eq 'Occurrences') { $occMeetings++; $occurrences += [Math]::Max(0, [int]$fast::Prop($m, 'Occurrences') - $skip.Count); $skippedOccurrences += $skip.Count }
         $list = @($m.Attendees)
         foreach ($a in $list) { if ($a.Type -ne 'resource') { $attendees++ } }
         $withOrganizer = $false
         # The meeting of a new organizer (Transfer report) is not an old copy: never removed by a replay.
         foreach ($c in $m.Copies) {
             if (-not $c.EventId -or $c.Role -eq 'New organizer') { continue }
+            if ($skip.Count -and $skip.Contains([MeetingCleanupNative.GuiRows]::OccurrenceKeyOf($c))) { $notSelected.Add($c); continue }
             if ($c.Role -eq 'Organizer') {
                 $withOrganizer = $true
                 if ($Action -eq 'Cancel') { $cancel.Add($c); if ($fast::Text($c, 'Occurrence')) { $cancelOccurrences++ } }
@@ -74,12 +82,13 @@ function Get-MclCleanupPlan {
     $lines.Add(('{0} cop{1} removed without any message in {2} mailbox(es): {3} attendee(s), {4} room(s)' -f $remove.Count, $(if ($remove.Count -eq 1) { 'y' } else { 'ies' }), $removeMailboxes.Count, ($remove.Count - $removeRooms), $removeRooms))
     if ($keep.Count) { $lines.Add(('{0} meeting(s) stay in the calendar of their organizer (removing them there would send a cancellation: choose Cancel to do it)' -f $keptMeetings.Count)) }
     if ($occMeetings) { $lines.Add(('{0} series limited to their occurrences in the period ({1} occurrence(s)): an occurrence removed is not kept in Recoverable Items, it cannot be restored' -f $occMeetings, $occurrences)) }
+    if ($skippedOccurrences) { $lines.Add(('{0} occurrence(s) not ticked: left as they are' -f $skippedOccurrences)) }
     if ($held.Count) {
         $reasons = [ordered]@{}
         foreach ($h in $held) { $reasons[$h.Reason] = 1 + [int]$reasons[$h.Reason] }
         $lines.Add(('{0} meeting(s) left as they are: {1}' -f $held.Count, ((@($reasons.Keys | ForEach-Object { "$($reasons[$_]) $_" })) -join '; ')))
     }
-    [pscustomobject]@{ Action = $Action; Meetings = $selected; Cancel = $cancel.ToArray(); Remove = $remove.ToArray(); Keep = $keep.ToArray(); Held = $held.ToArray(); Lines = $lines.ToArray(); Attendees = $attendees; Text = ($lines -join " $dot ") }
+    [pscustomobject]@{ Action = $Action; Meetings = $selected; Cancel = $cancel.ToArray(); Remove = $remove.ToArray(); Keep = $keep.ToArray(); Held = $held.ToArray(); NotSelected = $notSelected.ToArray(); Lines = $lines.ToArray(); Attendees = $attendees; Text = ($lines -join " $dot ") }
 }
 function Set-MclCopyResult {
     param($Copy, [string]$Action, $Response, [string]$Success)
@@ -227,6 +236,7 @@ function Invoke-MclCleanup {
         $h.Meeting.Notes.Add("Not acted on: $($h.Reason).")
         foreach ($c in @($h.Meeting.Copies | Where-Object { $_.EventId -and $_.Role -ne 'New organizer' })) { $c.Action = 'None'; $c.Result = 'Not processed'; $c.Detail = "left as it is: $($h.Reason)" }
     }
+    foreach ($c in $plan.NotSelected) { $c.Action = 'None'; $c.Result = 'Skipped'; $c.Detail = 'occurrence not ticked: left as it is' }
 
     Write-MclNextStep $(if ($Action -eq 'Cancel') { 'Cancel and clean' } else { 'Remove silently' }) $(if ($Action -eq 'Cancel') { 'Cancel' } else { 'Trash' })
     foreach ($line in $plan.Lines) { Write-MclItem Info $line }
@@ -329,7 +339,7 @@ function Invoke-MclCleanup {
 function Add-MclMeetingDefaults {
     <# A meeting read from a report of an older version: the properties added since, with their default. #>
     param($Meeting)
-    $defaults = [ordered]@{ OrganizerKey = [string]$Meeting.Organizer; Scope = 'Whole'; Occurrences = 0; RecurrenceData = $null; TimeZone = ''; NewOrganizer = ''; NewMeetingId = ''; TransferMethod = '' }
+    $defaults = [ordered]@{ OrganizerKey = [string]$Meeting.Organizer; Scope = 'Whole'; Occurrences = 0; RecurrenceData = $null; TimeZone = ''; NewOrganizer = ''; NewMeetingId = ''; TransferMethod = ''; SkippedOccurrences = @() }
     foreach ($name in $defaults.Keys) { if (-not $Meeting.PSObject.Properties[$name]) { $Meeting | Add-Member -NotePropertyName $name -NotePropertyValue $defaults[$name] } }
 }
 
@@ -355,7 +365,7 @@ function Import-MclReport {
         $copies = [Collections.Generic.List[object]]::new()
         foreach ($c in @($m.Copies)) {
             # Reports of 1.0.0 and 1.1.0: the properties added since.
-            foreach ($name in 'ShowAs', 'ActionUtc', 'Occurrence', 'OccurrenceStart', 'SeriesId') { if (-not $c.PSObject.Properties[$name]) { $c | Add-Member -NotePropertyName $name -NotePropertyValue '' } }
+            foreach ($name in 'ShowAs', 'ActionUtc', 'Occurrence', 'OccurrenceStart', 'OccurrenceKey', 'SeriesId') { if (-not $c.PSObject.Properties[$name]) { $c | Add-Member -NotePropertyName $name -NotePropertyValue '' } }
             if ($c.EventId) { $c.Action = ''; $c.Result = ''; $c.HttpStatus = 0; $c.Detail = ''; $c.Verified = ''; $c.ActionUtc = '' }
             $copies.Add($c)
         }

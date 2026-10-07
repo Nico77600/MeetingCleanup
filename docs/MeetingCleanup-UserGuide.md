@@ -1,7 +1,7 @@
 ---
 title: Meeting Cleanup
 subtitle: User guide
-version: 1.2.3
+version: 1.3.0
 author: Nicolas Fabert
 updated: 2026-10-07
 ---
@@ -64,10 +64,10 @@ $cert.Thumbprint                                                   # Authenticat
 <!-- icon: terminal -->
 ## 2. Everyday use
 
-Run the commands from the tool folder, in PowerShell 7. A command without `-Action` is a **report**: it finds the meetings and every copy of them (organizer, attendees, rooms, members of the groups invited) and **changes nothing**. Read the report, then run the same command with an action: *Remove*, *Cancel*, *Transfer* and *Restore* show exactly what will happen and ask to type **YES**; a backup is written before any change. `-Gui` does the same in a window (2.9).
+Run the commands from the tool folder, in PowerShell 7. A command without `-Action` is a **report**: it finds the meetings and every copy of them (organizer, attendees, rooms, members of the groups invited) and **changes nothing**. Read the report, then run the same command with an action: *Remove*, *Cancel*, *Transfer* and *Restore* show exactly what will happen and ask to type **YES**; a backup is written before any change. `-Gui` does the same in a window (2.10).
 
 > [!IMPORTANT]
-> Always start with a report. A silent removal can be undone for 14 days (2.8); a **cancellation cannot be undone**: the attendees received it.
+> Always start with a report. A silent removal can be undone for 14 days (2.9); a **cancellation cannot be undone**: the attendees received it.
 
 ### 2.1 Which meetings does this person still organize?
 
@@ -117,7 +117,16 @@ Jane becomes the organizer of every meeting still to come. When John is still ac
 
 The copies of the attendees and the rooms are removed, nobody receives anything; a series goes whole. The organizer's own meeting stays (*Kept*): removing it would send a cancellation — choose *Cancel* for that.
 
-### 2.6 Rooms closed for works
+### 2.6 One occurrence of a series
+
+```powershell
+# Not this Monday: the occurrence of 16 November only, cancelled for everyone
+.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Subject 'Weekly sales review' -SeriesScope Occurrences `
+    -Start 2026-11-16 -End 2026-11-16 -Action Cancel -Comment 'No sales review this Monday.'
+```
+ `-SeriesScope Occurrences`, a series is limited to its occurrences in the period: *Cancel* sends one cancellation for that date only, *Remove* takes the occurrence out of the attendees' and rooms' calendars without a message (the organizer keeps it). The series goes on. In the window: tick *Series: only the occurrences of the period*, search, select the series, then **Occurrences...** to tick the ones to act on (2.10). An occurrence removed cannot be restored.
+
+### 2.7 Rooms closed for works
 
 ```powershell
 .\Invoke-MeetingCleanup.ps1 -Room room-paris-01@contoso.com, room-paris-02@contoso.com -Start 2026-11-02 -End 2026-11-13 `
@@ -126,7 +135,7 @@ The copies of the attendees and the rooms are removed, nobody receives anything;
 
 Every meeting of these rooms in the period, whoever organized it. A series loses only its occurrences in the period, and goes on after. The period is required with an action.
 
-### 2.7 The leavers of the month
+### 2.8 The leavers of the month
 
 ```powershell
 .\Invoke-MeetingCleanup.ps1 -OrganizerFile .\leavers-2026-10.txt -SearchIn Organizer, Rooms
@@ -134,7 +143,7 @@ Every meeting of these rooms in the period, whoever organized it. A series loses
 
 A text file with one address per line, or a CSV file (`PrimarySmtpAddress`, `UserPrincipalName`, `Address`...): each mailbox is read once for all of them, and the report has an *Organizers* tab.
 
-### 2.8 Undo a Remove
+### 2.9 Undo a Remove
 
 ```powershell
 .\Invoke-MeetingCleanup.ps1 -Action Restore -FromReport .\reports\MeetingCleanup_Remove_20261006-001346
@@ -142,7 +151,7 @@ A text file with one address per line, or a CSV file (`PrimarySmtpAddress`, `Use
 
 The copies come back from Recoverable Items, as they were, **without a message**, and the rooms are busy again. It works for the retention of deleted items (**14 days** by default) and needs the rights of [Rights for Restore](MeetingCleanup-Guide.md#rights-for-restore). A cancelled meeting and an occurrence removed in rooms mode cannot be restored.
 
-### 2.9 In the window
+### 2.10 In the window
 
 ```powershell
 .\Invoke-MeetingCleanup.ps1 -Gui
@@ -151,9 +160,9 @@ The copies come back from Recoverable Items, as they were, **without a message**
 ![The window after a search](images/gui-search-light.png)
 
 ```steps
-Who and where | *Meetings of organizers* (addresses, or *Load a list...*) or *Every meeting of rooms*; the period, a subject; *Search in* on the left.
+Who and where | *Meetings of organizers* (addresses, or *Load a list...*) or *Every meeting of rooms*; the period, a subject, *Series: only the occurrences of the period*; *Search in* on the left.
 Search | The meetings appear on the right, each ticked; select one for its copies. The progress bar gives the step, the part done and the time left; *Stop* ends the run.
-Act | Untick the meetings to keep, choose *Remove silently*, *Cancel and clean* or *Transfer to a new organizer*, then the action button: it shows what will happen and asks to confirm.
+Act | Untick the meetings to keep (for a series by occurrences: *Occurrences...*, or a double-click, to tick its occurrences), choose *Remove silently*, *Cancel and clean* or *Transfer to a new organizer*, then the action button: it shows what will happen and asks to confirm.
 Report | *Open the report* shows the HTML report of the run; *Restore...* undoes a Remove.
 ```
 
@@ -168,6 +177,7 @@ Report | *Open the report* shows the HTML report of the run; *Restore...* undoes
 | `-Start` · `-End` | The period (an end date without a time is included). Default: the coming year | `-Start 2026-11-01 -End 2026-12-31` |
 | `-Subject` | The subject contains this text (`*` and `?` allowed) | `-Subject 'Weekly*'` |
 | `-MeetingId` | Only these meetings (column *MeetingId* of a report) | `-MeetingId 040000008200E0...` |
+| `-SeriesScope` | `Whole` (default): a series is acted on whole. `Occurrences`: only its occurrences in the period (a period of one day = one occurrence) | `-SeriesScope Occurrences` |
 | `-SearchIn` | Where to search (below). Default: `Organizer`, `Rooms` | `-SearchIn Rooms, AllMailboxes` |
 | `-FromReport` | Act on exactly the meetings of a reviewed report | `-FromReport .\reports\MeetingCleanup_Report_...` |
 | `-Action` | `Report` (default), `Remove`, `Cancel`, `Transfer`, `Restore` | `-Action Cancel` |
@@ -183,7 +193,7 @@ Report | *Open the report* shows the HTML report of the run; *Restore...* undoes
 | `Mailboxes` | The mailboxes of `-Mailbox` / `-MailboxFile` | A deleted organizer, meetings without room: his team. |
 | `AllMailboxes` | Every mailbox of the tenant | A deleted organizer, meetings without room, team unknown (3,000 to 5,000 mailboxes a minute). |
 
-A series is found when one of its occurrences falls in the period, and is handled as a whole (in rooms mode: its occurrences in the period only).
+A series is found when one of its occurrences falls in the period, and is handled as a whole — with `-SeriesScope Occurrences` and in rooms mode: its occurrences in the period only.
 
 <!-- icon: file -->
 ## 4. Results

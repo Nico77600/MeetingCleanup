@@ -27,7 +27,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.3
+    Version : 1.3.0
     Part of : Meeting Cleanup (repository tool, not in the package)
 #>
 [CmdletBinding()]

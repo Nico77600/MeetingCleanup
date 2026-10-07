@@ -60,6 +60,11 @@
 .PARAMETER Subject
     Only the meetings whose subject contains this text (* and ? are wildcards).
 
+.PARAMETER SeriesScope
+    A series: Whole (default, Search.SeriesScope) acts on the whole series, every occurrence; Occurrences acts only
+    on its occurrences in the period - with a period of one day, one occurrence. The occurrences can also be chosen
+    one by one in the window. With an action, the period must be given (-Start and -End).
+
 .PARAMETER MeetingId
     Only these meetings: column MeetingId of a report (iCalUId, the same in every copy of a meeting).
 
@@ -152,7 +157,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.3
+    Version : 1.3.0
     Exit codes : 0 = completed, 1 = failed, 2 = finished with warnings (a copy not removed or restored, a mailbox not read...).
     Documentation : docs\MeetingCleanup-UserGuide.html (user guide: prerequisites, everyday commands) and
                     docs\MeetingCleanup-Guide.html (developer guide); sources: docs\*.md
@@ -167,6 +172,8 @@ param(
     [datetime]$Start,
     [datetime]$End,
     [string]$Subject,
+    [ValidateSet('Whole', 'Occurrences')]
+    [string]$SeriesScope,
     [string[]]$MeetingId,
     [ValidateSet('Organizer', 'Rooms', 'Mailboxes', 'AllMailboxes')]
     [string[]]$SearchIn,
@@ -232,6 +239,7 @@ try {
     else {
         $requestArgs = @{ Settings = $settings; Organizer = $Organizer; OrganizerFile = $OrganizerFile; Room = $Room; RoomFile = $RoomFile; Subject = $Subject; MeetingId = $MeetingId; SearchIn = $SearchIn; Mailbox = $Mailbox; MailboxFile = $MailboxFile; Action = $Action; NewOrganizer = $NewOrganizer; TransferMethod = $TransferMethod }
         if ($PSBoundParameters.ContainsKey('TransferFrom')) { $requestArgs.TransferFrom = $TransferFrom }
+        if ($SeriesScope) { $requestArgs.SeriesScope = $SeriesScope }
         if ($PSBoundParameters.ContainsKey('Start')) { $requestArgs.Start = $Start }
         if ($PSBoundParameters.ContainsKey('End')) { $requestArgs.End = $End }
         if ($PSBoundParameters.ContainsKey('Comment')) { $requestArgs.Comment = $Comment }

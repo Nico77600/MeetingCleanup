@@ -27,7 +27,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.3
+    Version : 1.3.0
 #>
 
 $script:Exchange = $null
@@ -204,7 +204,7 @@ function Import-MclRestoreSource {
     foreach ($m in @($data.Meetings)) {
         $copies = [Collections.Generic.List[object]]::new()
         foreach ($c in @($m.Copies)) {
-            foreach ($name in 'ShowAs', 'ActionUtc', 'Occurrence', 'OccurrenceStart', 'SeriesId') { if (-not $c.PSObject.Properties[$name]) { $c | Add-Member -NotePropertyName $name -NotePropertyValue '' } }
+            foreach ($name in 'ShowAs', 'ActionUtc', 'Occurrence', 'OccurrenceStart', 'OccurrenceKey', 'SeriesId') { if (-not $c.PSObject.Properties[$name]) { $c | Add-Member -NotePropertyName $name -NotePropertyValue '' } }
             $c | Add-Member -NotePropertyName RemovedUtc -NotePropertyValue $(if ($c.ActionUtc) { ConvertFrom-MclExchangeTime $c.ActionUtc } else { $null }) -Force
             $c | Add-Member -NotePropertyName PreviousResult -NotePropertyValue ([string]$c.Result) -Force
             $c | Add-Member -NotePropertyName RestoredUtc -NotePropertyValue '' -Force

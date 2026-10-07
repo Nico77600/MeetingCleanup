@@ -771,6 +771,104 @@ Describe 'Rooms' {
     }
 }
 
+Describe 'Series by occurrences' {
+    BeforeEach { New-TestTenant }
+
+    It 'organizer present: one occurrence cancelled for everyone, the series goes on' {
+        $r = Find-Test 'org@contoso.test' 'Organizer' @{ Subject = 'S1'; SeriesScope = 'Occurrences'; Start = [datetime]'2030-03-18'; End = [datetime]'2030-03-18' }
+        $r.Request.SeriesScope | Should -Be 'Occurrences'
+        $s1 = Get-Meeting $r 'S1'
+        $s1.Scope | Should -Be 'Occurrences'
+        $s1.Occurrences | Should -Be 1
+        @($s1.Copies | Where-Object Occurrence | ForEach-Object Mailbox | Sort-Object) | Should -Be @('att1@contoso.test', 'org@contoso.test', 'room2@contoso.test')
+        $run = Invoke-TestCleanup $r 'Cancel' 'Not this Monday'
+        @($script:Fake.Messages | Where-Object Kind -eq 'Cancellation' | ForEach-Object Occurrence) | Should -Be @('2030-03-18T09:00')
+        foreach ($mb in 'org@contoso.test', 'att1@contoso.test', 'room2@contoso.test') {
+            $copy = Get-FakeEvents $mb $script:Ids.S1
+            $copy.Count | Should -Be 1
+            @($copy[0].DeletedOccurrences) | Should -Be @('2030-03-18T09:00')
+        }
+        $run.Result.Status | Should -Be 'Completed'
+        (Get-Meeting $run.Result 'S1').Status | Should -Be 'Cancelled'
+    }
+
+    It 'occurrences left out (window choice) are left as they are; silent Remove of the others; replay keeps the choice' {
+        $r = Find-Test 'org@contoso.test' 'Organizer' @{ Subject = 'S1'; SeriesScope = 'Occurrences'; Start = [datetime]'2030-03-15'; End = [datetime]'2030-03-31' }
+        $s1 = Get-Meeting $r 'S1'
+        $s1.Occurrences | Should -Be 2
+        $rows = [MeetingCleanupNative.GuiRows]::Occurrences($s1)
+        @($rows | ForEach-Object Start) | Should -Be @('2030-03-18 09:00', '2030-03-25 09:00')
+        $rows[0].Copies | Should -Be 3
+        $rows[0].Organizer | Should -Be 'Present'
+        # The 25th unticked.
+        $rows[1].Selected = $false
+        $s1.SkippedOccurrences = [Collections.Generic.List[string]][string[]]@([MeetingCleanupNative.GuiRows]::UntickedOccurrences($rows))
+        [MeetingCleanupNative.GuiRows]::KindText($s1) | Should -Be '1/2 occ.'
+        $plan = & $script:Module { param($r) Get-MclCleanupPlan -Result $r -Action Remove } $r
+        $plan.NotSelected.Count | Should -Be 3
+        ($plan.Lines -join ' ') | Should -Match '1 occurrence\(s\) not ticked'
+        $run = Invoke-TestCleanup $r 'Remove'
+        $script:Fake.Messages.Count | Should -Be 0
+        foreach ($mb in 'att1@contoso.test', 'room2@contoso.test') { @((Get-FakeEvents $mb $script:Ids.S1)[0].DeletedOccurrences) | Should -Be @('2030-03-18T09:00') }
+        @((Get-FakeEvents 'org@contoso.test' $script:Ids.S1)[0].DeletedOccurrences).Count | Should -Be 0
+        @((Get-Meeting $run.Result 'S1').Copies | Where-Object Result -eq 'Skipped').Count | Should -Be 3
+        (Import-Csv (Join-Path $run.Folder 'MeetingCleanup-Meetings.csv') -Delimiter ';' | Where-Object Subject -like 'S1*').OccurrencesSkipped | Should -Be '1'
+        # The report replayed: the occurrence left out stays out.
+        $replay = Import-MclReport -Path $run.Folder
+        (& $script:Module { param($r) Get-MclCleanupPlan -Result $r -Action Cancel } $replay).NotSelected.Count | Should -Be 3
+    }
+
+    It 'organizer mailbox gone: the occurrences come from the attendees and the rooms, removed silently' {
+        $uid = Add-FakeMeeting -Organizer 'gone@contoso.test' -OrganizerName 'Gary Gone' -Subject 'G2 Weekly of a leaver' -Start '2030-06-03T09:00:00' -Attendees 'att1@contoso.test' -Rooms 'room1@contoso.test' -Recurrence @{ pattern = @{ type = 'weekly'; interval = 1; daysOfWeek = @('monday') }; range = @{ type = 'numbered'; numberOfOccurrences = 4; startDate = '2030-06-03' } }
+        $r = Find-Test 'gone@contoso.test' 'Rooms' @{ Subject = 'G2'; SeriesScope = 'Occurrences'; Start = [datetime]'2030-06-10'; End = [datetime]'2030-06-10' }
+        $g2 = Get-Meeting $r 'G2'
+        $g2.Scope | Should -Be 'Occurrences'
+        $g2.Occurrences | Should -Be 1
+        $null = Invoke-TestCleanup $r 'Cancel' 'x'
+        @($script:Fake.Messages | Where-Object Kind -eq 'Cancellation').Count | Should -Be 0
+        foreach ($mb in 'att1@contoso.test', 'room1@contoso.test') { @((Get-FakeEvents $mb $uid)[0].DeletedOccurrences) | Should -Be @('2030-06-10T09:00') }
+    }
+
+    It 'an occurrence moved in one calendar only is one occurrence: unticked, none of its copies is touched' {
+        # The 25th moved from 09:00 to 10:00 in the organizer's calendar only: the attendee and the room are still at 09:00.
+        (Get-FakeEvents 'org@contoso.test' $script:Ids.S1)[0].Exceptions['2030-03-25T09:00'] = @{ Start = [datetime]'2030-03-25T10:00:00'; End = [datetime]'2030-03-25T10:30:00'; Subject = ''; Location = '' }
+        $r = Find-Test 'org@contoso.test' 'Organizer' @{ Subject = 'S1'; SeriesScope = 'Occurrences'; Start = [datetime]'2030-03-15'; End = [datetime]'2030-03-31' }
+        $s1 = Get-Meeting $r 'S1'
+        $s1.Occurrences | Should -Be 2
+        $rows = [MeetingCleanupNative.GuiRows]::Occurrences($s1)
+        $rows.Count | Should -Be 2
+        $rows[1].Copies | Should -Be 3
+        $rows[1].Start | Should -Match '^2030-03-25 10:00 \(moved in some copies\)$'
+        $rows[1].Selected = $false
+        $s1.SkippedOccurrences = [Collections.Generic.List[string]][string[]]@([MeetingCleanupNative.GuiRows]::UntickedOccurrences($rows))
+        $plan = & $script:Module { param($r) Get-MclCleanupPlan -Result $r -Action Cancel } $r
+        @($plan.NotSelected | ForEach-Object Mailbox | Sort-Object) | Should -Be @('att1@contoso.test', 'org@contoso.test', 'room2@contoso.test')
+        $null = Invoke-TestCleanup $r 'Cancel' 'x'
+        @($script:Fake.Messages | Where-Object Kind -eq 'Cancellation' | ForEach-Object Occurrence) | Should -Be @('2030-03-18T09:00')
+        foreach ($mb in 'att1@contoso.test', 'room2@contoso.test') { @((Get-FakeEvents $mb $script:Ids.S1)[0].DeletedOccurrences) | Should -Be @('2030-03-18T09:00') }
+    }
+
+    It 'every occurrence in the period: each one acted on, said in the notes (not handled whole)' {
+        $r = Find-Test 'org@contoso.test' 'Organizer' @{ Subject = 'S1'; SeriesScope = 'Occurrences'; Start = [datetime]'2030-03-01'; End = [datetime]'2030-04-30' }
+        $s1 = Get-Meeting $r 'S1'
+        $s1.Scope | Should -Be 'Occurrences'
+        $s1.Occurrences | Should -Be 4
+        ($s1.Notes -join ' ') | Should -Match 'each one is acted on separately'
+        # Whole (the default): the same search handles the series at once.
+        (Get-Meeting (Find-Test 'org@contoso.test' 'Organizer' @{ Subject = 'S1'; Start = [datetime]'2030-03-18'; End = [datetime]'2030-03-18' }) 'S1').Scope | Should -Be 'Whole'
+    }
+
+    It 'checks the request: a period for an action, no transfer, the setting of the configuration' {
+        $s = New-TestSettings
+        (Test-MclRequest (New-MclRequest -Settings $s -Organizer 'org@contoso.test' -SeriesScope Occurrences -Action Cancel)).Problems -join ' ' | Should -Match 'Series by occurrences: give the period'
+        (Test-MclRequest (New-MclRequest -Settings $s -Organizer 'org@contoso.test' -SeriesScope Occurrences -Start '2030-01-01' -End '2030-01-31' -Action Cancel)).IsValid | Should -BeTrue
+        (Test-MclRequest (New-MclRequest -Settings $s -Organizer 'org@contoso.test' -SeriesScope Occurrences -Start '2030-01-01' -End '2030-01-31' -Action Transfer -NewOrganizer 'att3@contoso.test')).Problems -join ' ' | Should -Match 'cannot be transferred'
+        (New-MclRequest -Settings (New-TestSettings @{ SeriesScope = 'Occurrences' }) -Organizer 'org@contoso.test').SeriesScope | Should -Be 'Occurrences'
+        (New-MclRequest -Settings $s -Room 'room1@contoso.test').SeriesScope | Should -Be 'Occurrences'
+        (Test-MclConfiguration -Configuration (New-TestSettings @{ SeriesScope = 'Some' })).Problems -join ' ' | Should -Match 'Search.SeriesScope'
+    }
+}
+
 Describe 'Transfer' {
     BeforeEach { New-TestTenant }
 
@@ -1097,6 +1195,55 @@ Describe 'Window' {    It 'builds the window from the configuration' {
         finally { & $script:Module { $script:GuiAnswers = $null; if ($script:Gui.Runspace) { $script:Gui.Runspace.Dispose() } }; $f.Form.Close() }
     }
 
+    It 'series by occurrences: the option, the occurrences of a series chosen (Occurrences...), the action on them only' {
+        New-TestTenant
+        $s = New-TestSettings
+        $null = Connect-Test $s
+        $f = New-MclForm -Configuration $s -Theme Light
+        $c = $f.Controls
+        $c.Organizer.Text = 'org@contoso.test'
+        $c.Subject.Text = 'S1'
+        $c.StartDate.SelectedDate = [datetime]'2030-03-15'; $c.EndDate.SelectedDate = [datetime]'2030-03-31'
+        try {
+            $c.SeriesOccurrences.IsChecked = $true
+            & $script:Module { Update-MclGuiState }
+            $c.ActionTransfer.IsEnabled | Should -BeFalse
+            $c.PeriodHint.Text | Should -Match 'Occurrences\.\.\.'
+            & $script:Module { $script:GuiInline = $true; Invoke-MclGuiSearch }
+            $f.Rows.Count | Should -Be 1
+            $f.Rows[0].Kind | Should -Be '2 occ.'
+            $c.Meetings.SelectedIndex = 0
+            & $script:Module { Update-MclGuiState }
+            $c.PickOccurrences.IsEnabled | Should -BeTrue
+            # A series unticked in the list opens with nothing ticked, and OK alone leaves it unticked.
+            $f.Rows[0].Selected = $false
+            & $script:Module { Show-MclGuiOccurrences }
+            @(& $script:Module { $script:Gui.OccurrenceRows } | Where-Object Selected).Count | Should -Be 0
+            & $script:Module { Complete-MclGuiOccurrences }
+            $f.Rows[0].Selected | Should -BeFalse
+            $f.Rows[0].Selected = $true
+            & $script:Module { $script:Gui.Rows[0].Meeting.SkippedOccurrences = [Collections.Generic.List[string]]::new() }
+            & $script:Module { Show-MclGuiOccurrences }
+            $c.OccurrencePanel.Visibility | Should -Be 'Visible'
+            $c.Close.IsCancel | Should -BeFalse
+            $occ = @(& $script:Module { $script:Gui.OccurrenceRows })
+            $occ.Count | Should -Be 2
+            $occ[1].Selected = $false
+            & $script:Module { Update-MclGuiOccurrenceCount }
+            $c.OccurrenceCount.Text | Should -Be '1 of 2 ticked'
+            & $script:Module { Complete-MclGuiOccurrences }
+            $c.OccurrencePanel.Visibility | Should -Be 'Collapsed'
+            $c.Close.IsCancel | Should -BeTrue
+            $f.Rows[0].Kind | Should -Be '1/2 occ.'
+            @($f.Rows[0].Meeting.SkippedOccurrences).Count | Should -Be 1
+            ($f.Lines -join "`n") | Should -Match "'S1 Weekly': 1 of 2 occurrence\(s\) ticked"
+            & $script:Module { $script:GuiAnswers = [Collections.Generic.Queue[string]]::new(); $script:GuiAnswers.Enqueue('Yes'); Invoke-MclGuiApply }
+            $script:Fake.Messages.Count | Should -Be 0
+            foreach ($mb in 'att1@contoso.test', 'room2@contoso.test') { @((Get-FakeEvents $mb $script:Ids.S1)[0].DeletedOccurrences) | Should -Be @('2030-03-18T09:00') }
+            $f.Rows[0].Status | Should -Be 'Removed'
+        }
+        finally { & $script:Module { $script:GuiInline = $false; $script:GuiAnswers = $null }; $f.Form.Close() }
+    }
     It 'shows the progress of a run: the step, the part done, the time left, the taskbar button' {
         $s = New-TestSettings
         $f = New-MclForm -Configuration $s -Theme Light

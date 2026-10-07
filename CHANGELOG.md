@@ -3,6 +3,24 @@
 All notable changes are listed here. Versions follow MAJOR.MINOR.PATCH (see the guide, Appendix D).
 Author: Nicolas Fabert.
 
+## [1.3.0] — 2026-10-07
+
+One occurrence of a series, without going through the rooms.
+
+### Added
+- **Series by occurrences** for the meetings of organizers: `-SeriesScope Occurrences` (`Search.SeriesScope`, or
+  *Series: only the occurrences of the period* in the window) limits each series to its occurrences in the period —
+  with a period of one day, one occurrence. The occurrences are those of the organizer's calendar (of the attendees'
+  and rooms' copies when the organizer's mailbox is gone). *Cancel* sends one cancellation per occurrence, for that
+  date only; *Remove* takes the occurrences out of the attendees' and rooms' calendars without a message. The series
+  goes on. With an action, the period must be given; *Transfer* stays for whole series.
+- **Occurrences...** in the window (or a double-click on the series): the occurrences of a series of the period,
+  each ticked or not — only the ones ticked are acted on. *Kind* shows `2/4 occ.`; the report keeps the choice
+  (column *OccurrencesSkipped*, copies *Skipped*), and a replay with `-FromReport` too. It also works in rooms mode.
+- Measured in the lab: one occurrence of a weekly series cancelled from the command line (one *Canceled:* for that
+  date, the other occurrences intact); in the window, one occurrence ticked out of two removed silently, the other
+  and the organizer's untouched, no message.
+
 ## [1.2.3] — 2026-10-07
 
 ### Added

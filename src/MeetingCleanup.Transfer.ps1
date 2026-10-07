@@ -30,7 +30,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.3
+    Version : 1.3.0
 #>
 
 function Resolve-MclNewOrganizer {
@@ -93,7 +93,7 @@ function Get-MclTransferPlan {
         $before = [string](Get-MclProperty $m 'ReportStatus')
         if ($new -contains [string]$m.Organizer -or $new -contains [string]$m.OrganizerKey) { $reason = "already organized by $($NewOrganizer.Address)" }
         elseif ([string](Get-MclProperty $m 'NewMeetingId') -or $before -in 'Transferred', 'Partial' -or @($m.Copies | Where-Object Role -eq 'New organizer').Count) { $reason = "already transferred by the run of this report (to $(Get-MclProperty $m 'NewOrganizer'))" }
-        elseif ((Get-MclProperty $m 'Scope') -eq 'Occurrences') { $reason = 'occurrences of a series (rooms): transfer the whole series from the search of its organizer' }
+        elseif ((Get-MclProperty $m 'Scope') -eq 'Occurrences') { $reason = 'occurrences of a series: transfer the whole series (search its organizer with -SeriesScope Whole)' }
         elseif ($m.Kind -ne 'Series' -and $m.End -and ([datetime]$m.End).ToUniversalTime() -le $since) { $reason = 'already over at the transfer date' }
         elseif ($m.Cancelled) { $reason = 'cancelled meeting' }
         elseif (-not @($m.Copies | Where-Object { $_.EventId -and $_.Role -in 'Organizer', 'Attendee', 'Room' }).Count) { $reason = 'no copy to read the meeting from' }

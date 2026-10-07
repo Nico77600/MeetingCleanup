@@ -1,7 +1,7 @@
 ---
 title: Meeting Cleanup
 subtitle: Developer guide
-version: 1.2.3
+version: 1.3.0
 author: Nicolas Fabert
 updated: 2026-10-07
 ---
@@ -101,6 +101,7 @@ Every case is the same command: what changes is the organizer state, what is sea
 | **One meeting**, still in the organizer's calendar | `-Organizer <address> -Subject 'Weekly review'` |
 | **One meeting** no longer in the organizer's calendar (deleted without cancellation) | `-Organizer <address> -Subject 'Weekly review' -SearchIn Rooms` — or `Mailboxes`, `AllMailboxes` when it had no room |
 | **A series**, present or not at the organizer | the same: a series is one meeting, handled as a whole (every occurrence and exception) |
+| **One or some occurrences of a series** | `-Organizer <address> -Subject 'Weekly review' -SeriesScope Occurrences -Start 2026-11-16 -End 2026-11-16` — or the window: *Series: only the occurrences of the period*, then *Occurrences...* to tick them (below) |
 | **A period**, organizer present | `-Organizer <address> -Start 2026-11-01 -End 2026-12-31` |
 | **A period**, organizer deleted | `-Organizer <old address> -SearchIn Rooms` then, for the meetings without room, `-SearchIn Mailboxes -MailboxFile .\team.txt` or `-SearchIn AllMailboxes` |
 | **A meeting chosen in a report** | `-Organizer <address> -MeetingId <MeetingId of the report>`, or `-FromReport <folder> -MeetingId <id>` |
@@ -135,7 +136,22 @@ So the two actions are:
 - A meeting **no longer in the organizer's calendar**, or whose organizer is deleted, cannot be cancelled: with *Cancel* its copies are removed silently, and the report says so.
 - With *Remove*, a meeting that stays at the organizer is marked **Kept**: if the organizer (or someone with access to the mailbox) later removes it, Exchange will send the cancellation then. Choose *Cancel* to do it now, with a message.
 - If the cancellation fails, the copies of that meeting are left untouched (**Not done**), so that the meeting stays consistent.
-- A series is cancelled or removed as a whole, past occurrences included.
+- A series is cancelled or removed as a whole, past occurrences included — unless it is limited to its occurrences in the period (*Occurrences of a series*, below, and the rooms mode).
+
+### Occurrences of a series
+
+`-SeriesScope Occurrences` (`Search.SeriesScope`, or *Series: only the occurrences of the period* in the window) limits each series found to **its occurrences in the period**, as the rooms mode does, but for the meetings of organizers and without any room. With a period of one day, one occurrence.
+
+- The occurrences are those of the **organizer's calendar**; when the organizer has no mailbox any more, those of the copies of the attendees and the rooms. Each copy (organizer, attendees, rooms) is replaced by its occurrences of the period, each with its own ID, matched by its original start (an occurrence moved to another time is still found).
+- *Cancel*: the organizer cancels these occurrences only — **one cancellation per occurrence**, with your message, to every attendee — then the copies left are removed. *Remove*: these occurrences go from the attendees' and the rooms' calendars without any message; the organizer keeps them. The series goes on before and after.
+- **In the window, the occurrences can be chosen one by one**: select the series, then *Occurrences...* (or double-click it): ticked = acted on, unticked = left as they are. *Kind* shows `2/4 occ.`; the report keeps the choice (column *OccurrencesSkipped*, copies *Skipped*), and a replay (`-FromReport`) too.
+- A series whose every occurrence is in the period is still acted on occurrence by occurrence (a note says so): `-SeriesScope Whole` cancels it at once.
+- With an action, the period must be given (`-Start` and `-End`). An occurrence removed is **not restorable** (Exchange does not keep it in Recoverable Items). *Transfer* moves whole series: not available by occurrences.
+- When the occurrences of the organizer cannot be read, the series is left as it is (*Not processed*).
+
+Measured in the lab (2026-10-07, Appendix C): one occurrence of a weekly series cancelled from the command line — gone at the organizer and the attendee, one *Canceled:* for that date, the three others intact; then, in the window, two occurrences of the period, one unticked, *Remove silently* — only the one ticked gone from the attendee, no message.
+
+![Occurrences of a series, chosen in the window](images/gui-occurrences-light.png)
 
 ### Rooms over a period
 
@@ -317,6 +333,7 @@ Get-ChildItem 'C:\Tools\MeetingCleanup' -Recurse -File -Force | Unblock-File
 | `Authentication.ClientSecretVariable` | `MCL_CLIENT_SECRET` | Environment variable of the secret. |
 | `Search.SearchIn` | `Organizer`, `Rooms` | Default of `-SearchIn`. |
 | `Search.PastDays` · `FutureDays` | `0` · `365` | Default period: today minus *PastDays* to today plus *FutureDays* (included). |
+| `Search.SeriesScope` | `Whole` | `Whole`: a series acted on whole; `Occurrences`: only its occurrences in the period (chapter 4). The window starts with its option ticked when `Occurrences`. |
 | `Search.Rooms` · `RoomFile` | | Rooms added to the places API (a new room can take time to appear there). |
 | `Search.MailboxFile` | | Default file of the `Mailboxes` scope. |
 | `Cleanup.CancelComment` | *This meeting has been cancelled by the IT department.* | Message of *Cancel* (plain text). |
@@ -347,6 +364,7 @@ A file of mailboxes (`-MailboxFile`, `Search.MailboxFile`, `Search.RoomFile`) is
 | `-Room` · `-RoomFile` | Rooms mode: every meeting of these rooms in the period, whatever its organizer (instead of `-Organizer`). With an action, `-Start` and `-End` are required. |
 | `-Start` · `-End` | The period, in `Report.TimeZone`; an end date without a time is included. |
 | `-Subject` | Only the meetings whose subject contains this text (`*` and `?` are wildcards). The real subject is used, not the organizer's name a room shows. |
+| `-SeriesScope` | `Whole` (default, `Search.SeriesScope`): a series is acted on whole. `Occurrences`: only its occurrences in the period (chapter 4); with an action, give `-Start` and `-End`. |
 | `-MeetingId` | Only these meetings (column *MeetingId* of the report). |
 | `-SearchIn` | `Organizer`, `Rooms`, `Mailboxes`, `AllMailboxes`. |
 | `-Mailbox` · `-MailboxFile` | The mailboxes of the `Mailboxes` scope. |
@@ -383,6 +401,9 @@ A file of mailboxes (`-MailboxFile`, `Search.MailboxFile`, `Search.RoomFile`) is
 # Two rooms closed for works: every meeting of the period cancelled by its organizer (an occurrence for a series)
 .\Invoke-MeetingCleanup.ps1 -Room room-paris-01@contoso.com, room-paris-02@contoso.com -Start 2026-11-02 -End 2026-11-13 -Action Cancel -Comment 'The rooms of the 1st floor are closed for works.'
 
+# Not this Monday: one occurrence of a weekly series cancelled, the series goes on
+.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Subject 'Weekly sales review' -SeriesScope Occurrences -Start 2026-11-16 -End 2026-11-16 -Action Cancel -Comment 'No sales review this Monday.'
+
 # John has left (mailbox deleted): Jane organizes his meetings from now on
 .\Invoke-MeetingCleanup.ps1 -Organizer john.doe@contoso.com -SearchIn Rooms, AllMailboxes -Action Transfer -NewOrganizer jane.roe@contoso.com
 ```
@@ -398,9 +419,9 @@ More examples, one per everyday question (who still organizes what, a leaver, a 
 
 ![The window after a search](images/gui-search-light.png)
 
-1. **Meetings of organizers** or **Every meeting of rooms**, then the addresses (one per line, or *Load a list...* for a text or CSV file), **Meetings** (period, subject) and **Search in** on the left — with rooms, *Search in* is not used: the rooms given are searched. The *Connection* section holds the tenant and the application of the configuration (changes there are for the window only).
+1. **Meetings of organizers** or **Every meeting of rooms**, then the addresses (one per line, or *Load a list...* for a text or CSV file), **Meetings** (period, subject, and *Series: only the occurrences of the period* to act on occurrences rather than whole series) and **Search in** on the left — with rooms, *Search in* is not used: the rooms given are searched. The *Connection* section holds the tenant and the application of the configuration (changes there are for the window only).
 2. **Search**: the progress shows the same lines as the console; the meetings appear on the right, each with a box ticked (with an *Organizer* column when there are several organizers). Selecting a meeting shows its copies: mailbox, role, how it was found, result. A click on a column header sorts the list. A search changes nothing and writes a report.
-3. Untick the meetings to keep, choose **Remove silently**, **Cancel and clean** (and the message) or **Transfer to a new organizer** (its address and the method), then the action button — *Remove 3 meetings*, *Transfer 2 meetings* — which shows exactly what will happen and asks to confirm. A backup is written first. In rooms mode, a series shows *2 occ.*: its occurrences in the period, the only ones acted on; the copies show the *Occurrence* column.
+3. Untick the meetings to keep, choose **Remove silently**, **Cancel and clean** (and the message) or **Transfer to a new organizer** (its address and the method), then the action button — *Remove 3 meetings*, *Transfer 2 meetings* — which shows exactly what will happen and asks to confirm. A backup is written first. In rooms mode, or with *Series: only the occurrences of the period*, a series shows *2 occ.*: its occurrences in the period, the only ones acted on; the copies show the *Occurrence* column, and **Occurrences...** (or a double-click on the series) chooses among them (*1/2 occ.*).
 4. The statuses and the copies are updated; **Open the report** shows the HTML report of the action.
 5. **Restore...** undoes a Remove: the run just done in the window, or the folder of another run. The plan is shown and confirmed, then the copies come back (chapter 4).
 
@@ -473,7 +494,7 @@ One folder per run, `<FilePrefix>_<Action>_<yyyyMMdd-HHmmss>`:
 
 | File | Content |
 |---|---|
-| `MeetingCleanup-Meetings.csv` | One row per meeting: ID, subject, organizer, start, series (*Scope* `Occurrences` and their number in rooms mode), organizer copy, copies, status, new organizer and new meeting ID of a transfer. |
+| `MeetingCleanup-Meetings.csv` | One row per meeting: ID, subject, organizer, start, series (*Scope* `Occurrences`, their number and *OccurrencesSkipped*, the occurrences left out in the window, when limited to the period), organizer copy, copies, status, new organizer and new meeting ID of a transfer. |
 | `MeetingCleanup-Copies.csv` | One row per mailbox (per occurrence in rooms mode, column *Occurrence*): organizer, role, found by, action, result, HTTP status, verified, time of the action, detail, event ID. |
 | `MeetingCleanup-Organizers.csv` | One row per organizer: address typed, name, state (mailbox, no mailbox, not in the directory), meetings, series, copies, and what was done (removed, cancelled, restored, failed). |
 | `MeetingCleanup-Transfers.csv` | *Transfer* only: one row per meeting of the transfer — old organizer and its state, new organizer, method, status, new meeting (result, iCalUId, attendees and rooms invited), old meeting at the old organizer, old copies removed, failed or left, notes (chapter 10). |
@@ -546,7 +567,7 @@ pwsh -STA -File .\tools\Measure-MeetingCleanup.ps1 -Meetings 2000 -Search -Gui
 .\Run-Tests.ps1      # Pester 6.1+, simulated tenant, no network
 ```
 
-`tests\MeetingCleanup.FakeGraph.ps1` replaces the transport with a simulated Exchange Online that behaves like the lab: the same iCalUId in every copy, room copies with the organizer's name as subject, the attendee list in every copy, a filter on the organizer refused, a cancellation sent whenever the organizer's meeting is removed or cancelled, groups delivered to their members, a copy removed marked *Declined* at the organizer and kept in Recoverable Items (with a new EntryID), `Get-RecoverableItems` and `Restore-RecoverableItems` simulated; each occurrence with its own ID (cancel, removal, move), a meeting created without attendees then invited by `PATCH`, `Invoke-ChangeMeetingOrganizer` simulated. The tests cover the configuration, the request, the connection and the permissions, the scheduler (20 per `$batch`, 4 per mailbox, retries, pages), every case of chapter 3, a list of organizers, Remove and Cancel, the backup, Restore (copies with the same subject, already present, not found, cancelled, a report of 1.0.0), the rooms mode (occurrences in the period, a series whole or not, an occurrence moved to another room, occurrences not read), the transfer (native, refused, re-created with its occurrences, an occurrence moved from a past slot, a series that does not match, a deleted, soft-deleted or not looked-up organizer, a failed invitation, a replayed report, a rooms search refused, Stop held), the report and its replay, the window (a search and a Remove, a plan built in the background then declined, the progress bar, the time left and the taskbar button) and the command line.
+`tests\MeetingCleanup.FakeGraph.ps1` replaces the transport with a simulated Exchange Online that behaves like the lab: the same iCalUId in every copy, room copies with the organizer's name as subject, the attendee list in every copy, a filter on the organizer refused, a cancellation sent whenever the organizer's meeting is removed or cancelled, groups delivered to their members, a copy removed marked *Declined* at the organizer and kept in Recoverable Items (with a new EntryID), `Get-RecoverableItems` and `Restore-RecoverableItems` simulated; each occurrence with its own ID (cancel, removal, move), a meeting created without attendees then invited by `PATCH`, `Invoke-ChangeMeetingOrganizer` simulated. The tests cover the configuration, the request, the connection and the permissions, the scheduler (20 per `$batch`, 4 per mailbox, retries, pages), every case of chapter 3, a list of organizers, Remove and Cancel, the backup, Restore (copies with the same subject, already present, not found, cancelled, a report of 1.0.0), the series by occurrences (one occurrence cancelled, occurrences left out and replayed, a deleted organizer, every occurrence in the period), the rooms mode (occurrences in the period, a series whole or not, an occurrence moved to another room, occurrences not read), the transfer (native, refused, re-created with its occurrences, an occurrence moved from a past slot, a series that does not match, a deleted, soft-deleted or not looked-up organizer, a failed invitation, a replayed report, a rooms search refused, Stop held), the report and its replay, the window (a search and a Remove, a plan built in the background then declined, the progress bar, the time left and the taskbar button) and the command line.
 
 <!-- icon: book -->
 ## 15. Documentation and package
@@ -592,7 +613,7 @@ A link from one guide to the other is written with its GitHub anchor (`MeetingCl
 | Restore: `UnAuthorized` / `AADSTS` when connecting Exchange Online | `Exchange.ManageAsApp` missing or without consent, or `Tenant.Organization` is not the initial domain (`contoso.onmicrosoft.com`). |
 | Restore: copies *Not found* | Retention of deleted items over, copy already restored, or removed by someone else after the run. `Backup.json` says what was there. |
 | A restored room shows the meeting as *Free* | `Restore.ReAccept` is `$false`, or the answer failed (*Detail*, run *Warning*): run the same restore again, it answers the copies left *Declined* / *Free*. |
-| *Rooms: give the period of the action* | Rooms mode with an action: `-Start` and `-End` are required. |
+| *Rooms: give the period of the action* · *Series by occurrences: give the period of the action* | Rooms mode or `-SeriesScope Occurrences` with an action: `-Start` and `-End` are required. |
 | Transfer: *Invoke-ChangeMeetingOrganizer (with -EventId and -NewOrganizer) is not available* | The role *Meeting Organizer Transfer* (chapter 5) is missing or not applied yet (up to an hour). Or `-TransferMethod Recreate`. |
 | Transfer: *Invoke-ChangeMeetingOrganizer: A server side error has occurred* · *Transfer meeting action is disabled* | Exchange Online does not move it (feature not available, or failing): the meeting is untouched. Re-create it: `-FromReport <transfer report> -Action Transfer -NewOrganizer <address> -TransferMethod Recreate -MeetingId <id>`. |
 | Transfer: *New organizer ...: not a mailbox the application can open* | The new organizer must have a mailbox in Exchange Online (licence), reachable by the application. |
@@ -649,6 +670,7 @@ A lab tenant, Graph v1.0, 2026-10-05 and 06: an organizer, three attendees (one 
 | Tool, *Restore* of a 1.0.0 report (6 copies, deleted organizer) and of a list of 2 organizers (11 copies) | every copy back and verified, rooms *Busy* / *Accepted*, no duplicate, **no message** in any mailbox |
 | Tool, *Remove* of 6 meetings, 3 of them in one room (same subject: the organizer's name), then *Restore* of the middle one only, then of the run | 3 waves 4 s apart; the middle meeting alone back in the room, the two others untouched; then 6 restored, 3 already present, **no message** |
 | Application holding **only** `Calendars.ReadWrite.All` (then only `Calendars.Read.All`), app-only token, 2026-10-07 | `.ReadWrite.All`: events of a user and a room read (200), an event created (201) and removed (204) — the transfer works with it. `.Read.All`: read (200), creation refused (403). Both count as `Calendars.ReadWrite` / `Calendars.Read` (chapter 5) |
+| Tool 1.3.0, a weekly series of 4 (organizer, an attendee): `-SeriesScope Occurrences` over one day, *Cancel*; then the window, two occurrences of the period, one unticked, *Remove silently* | *Cancel*: the occurrence gone at the organizer and the attendee, **one** *Canceled:* for that date, the 3 others intact. Window: only the occurrence ticked gone from the attendee, the one unticked and the organizer's untouched, **no message** |
 
 <!-- icon: tag -->
 ## Appendix D - Versions

@@ -27,7 +27,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.3
+    Version : 1.3.0
 #>
 
 $script:Gui = $null
@@ -142,6 +142,7 @@ function Get-MclGuiXaml {
               </Grid>
               <TextBlock Text="Subject contains (empty = every meeting of the period)" Style="{StaticResource MclLabel}"/>
               <TextBox x:Name="Subject"/>
+              <CheckBox x:Name="SeriesOccurrences" Content="Series: only the occurrences of the period" Margin="0,10,0,0"/>
               <TextBlock x:Name="PeriodHint" Style="{StaticResource MclHint}" Margin="0,6,0,0" Text="A series is found when one of its occurrences falls in the period, and is handled as a whole."/>
             </StackPanel>
           </Border>
@@ -247,6 +248,12 @@ function Get-MclGuiXaml {
                 <Border x:Name="StatusPill" CornerRadius="10" Padding="10,2" Margin="0,0,10,0" VerticalAlignment="Center">
                   <TextBlock x:Name="Status" FontSize="12" FontWeight="SemiBold"/>
                 </Border>
+                <Button x:Name="PickOccurrences" Padding="10,3" Margin="0,0,6,0" IsEnabled="False" ToolTip="Choose the occurrences of the series selected (or double-click it)">
+                  <StackPanel Orientation="Horizontal">
+                    <TextBlock Style="{StaticResource MclIcon}" Text="&#xE787;" Margin="0,2,6,0"/>
+                    <TextBlock Text="Occurrences..."/>
+                  </StackPanel>
+                </Button>
                 <Button x:Name="SelectAll" Content="Tick all" Padding="10,3" Margin="0,0,6,0"/>
                 <Button x:Name="SelectNone" Content="Untick all" Padding="10,3"/>
               </StackPanel>
@@ -389,6 +396,67 @@ function Get-MclGuiXaml {
         </StackPanel>
       </Grid>
     </Border>
+
+    <!-- The occurrences of one series (Occurrences... or a double-click): ticked = acted on. Over the whole window
+         (it keeps the theme), the window below does not answer while it is open. -->
+    <Grid x:Name="OccurrencePanel" Grid.RowSpan="3" Visibility="Collapsed" Background="#66000000">
+      <!-- An opaque base under the card (the card colour of the theme is translucent). -->
+      <Border Background="{DynamicResource ApplicationBackgroundBrush}" CornerRadius="8" Width="620" MaxHeight="560" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="24">
+      <Border Style="{StaticResource MclCard}" Margin="0" Padding="22,18">
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+          <TextBlock x:Name="OccurrenceTitle" Style="{StaticResource MclCardTitle}" TextTrimming="CharacterEllipsis"/>
+          <TextBlock x:Name="OccurrenceHint" Grid.Row="1" Style="{StaticResource MclHint}" Margin="0,0,0,10"
+                     Text="Ticked: acted on (removed or cancelled). Unticked: left as they are. The series goes on outside the period."/>
+          <ListView x:Name="OccurrenceList" Grid.Row="2" MinHeight="120" SelectionMode="Single" BorderThickness="0" Background="Transparent"
+                    ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListView.ItemContainerStyle>
+              <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Static GridView.GridViewItemContainerStyleKey}}">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                <Setter Property="MinHeight" Value="30"/>
+              </Style>
+            </ListView.ItemContainerStyle>
+            <ListView.View>
+              <GridView AllowsColumnReorder="False">
+                <GridViewColumn Width="44">
+                  <GridViewColumn.CellTemplate>
+                    <DataTemplate>
+                      <CheckBox IsChecked="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" MinWidth="0" Padding="0"/>
+                    </DataTemplate>
+                  </GridViewColumn.CellTemplate>
+                </GridViewColumn>
+                <GridViewColumn Header="Occurrence" DisplayMemberBinding="{Binding Start}" Width="180"/>
+                <GridViewColumn Header="Organizer copy" DisplayMemberBinding="{Binding Organizer}" Width="130"/>
+                <GridViewColumn Header="Copies" DisplayMemberBinding="{Binding Copies}" Width="90"/>
+                <GridViewColumn Header="Rooms" DisplayMemberBinding="{Binding Rooms}" Width="90"/>
+              </GridView>
+            </ListView.View>
+          </ListView>
+          <Grid Grid.Row="3" Margin="0,14,0,0">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal">
+              <Button x:Name="OccurrenceAll" Content="Tick all" Padding="10,3" Margin="0,0,6,0"/>
+              <Button x:Name="OccurrenceNone" Content="Untick all" Padding="10,3"/>
+            </StackPanel>
+            <TextBlock x:Name="OccurrenceCount" Grid.Column="1" Margin="12,0" VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+              <Button x:Name="OccurrenceOk" Content="OK" MinWidth="90" Margin="0,0,8,0"/>
+              <Button x:Name="OccurrenceCancel" Content="Cancel" MinWidth="90"/>
+            </StackPanel>
+          </Grid>
+        </Grid>
+      </Border>
+      </Border>
+    </Grid>
   </Grid>
 </Window>
 '@
@@ -511,10 +579,11 @@ function New-MclForm {
     foreach ($name in 'Root', 'Header', 'Version', 'SettingsScroll', 'Inputs', 'Organizer', 'LoadOrganizers', 'OrganizerHint', 'Restore', 'StartDate', 'EndDate', 'Subject', 'ScopeOrganizer', 'ScopeRooms',
         'ScopeMailboxes', 'MailboxFile', 'Browse', 'ScopeAll', 'ActionRemove', 'ActionCancel', 'Comment', 'ActionTransfer', 'TransferHint', 'NewOrganizer', 'TransferMethod', 'WhoTitle', 'ModeOrganizers', 'ModeRooms', 'PeriodHint', 'SearchCard', 'ConnectionExpander', 'TenantId', 'AppId', 'AuthMode', 'ThumbPanel',
         'Thumbprint', 'SecretPanel', 'Secret', 'ConfigHint', 'Counts', 'StatusPill', 'Status', 'SelectAll', 'SelectNone', 'Meetings', 'MeetingsEmpty', 'CopiesTitle', 'Copies',
-        'ProgressBar', 'ProgressText', 'ProgressInfo', 'LogScroll', 'Log', 'Actions', 'Search', 'Apply', 'ApplyIcon', 'ApplyText', 'Stop', 'Footer', 'OpenReport', 'OpenFolder', 'Close') {
+        'ProgressBar', 'ProgressText', 'ProgressInfo', 'LogScroll', 'Log', 'Actions', 'Search', 'Apply', 'ApplyIcon', 'ApplyText', 'Stop', 'Footer', 'OpenReport', 'OpenFolder', 'Close',
+        'SeriesOccurrences', 'PickOccurrences', 'OccurrencePanel', 'OccurrenceTitle', 'OccurrenceList', 'OccurrenceAll', 'OccurrenceNone', 'OccurrenceCount', 'OccurrenceOk', 'OccurrenceCancel') {
         $controls[$name] = $window.FindName($name)
     }
-    foreach ($b in 'Search', 'Apply') {
+    foreach ($b in 'Search', 'Apply', 'OccurrenceOk') {
         if ($look.Fluent) { $controls[$b].SetResourceReference([Windows.FrameworkElement]::StyleProperty, 'AccentButtonStyle') }
         else { $controls[$b].SetResourceReference([Windows.Controls.Control]::BackgroundProperty, 'AccentFillColorDefaultBrush'); $controls[$b].Foreground = [Windows.Media.Brushes]::White }
     }
@@ -533,6 +602,7 @@ function New-MclForm {
     $controls.ScopeMailboxes.IsChecked = $scopes -contains 'Mailboxes'
     $controls.ScopeAll.IsChecked = $scopes -contains 'AllMailboxes'
     $controls.MailboxFile.Text = [string]$Configuration.MailboxFile
+    $controls.SeriesOccurrences.IsChecked = [string](Get-MclProperty $Configuration 'SeriesScope') -eq 'Occurrences'
     $controls.ActionRemove.IsChecked = $true
     $controls.ModeOrganizers.IsChecked = $true
     $controls.Comment.Text = [string]$Configuration.CancelComment
@@ -552,6 +622,9 @@ function New-MclForm {
     $items = [Collections.ObjectModel.ObservableCollection[object]]::new()
     $controls.Meetings.ItemsSource = $meetings
     $controls.Copies.ItemsSource = $copies
+    # The occurrences of the series being chosen (Occurrences...).
+    $occurrenceRows = [MeetingCleanupNative.BulkCollection]::new()
+    $controls.OccurrenceList.ItemsSource = $occurrenceRows
     $controls.Log.ItemsSource = $items
     # The channel of the background run (Start-MclGuiWork): its lines, Stop (Cancel), Hold, the log file. Every key
     # the engine reads is there (a synchronized hashtable throws on a missing key under Set-StrictMode).
@@ -562,7 +635,7 @@ function New-MclForm {
     $script:Gui = @{
         Form = $window; Controls = $controls; Configuration = $Configuration.Clone(); Settings = $null; Theme = $look
         Running = $false; Result = $null; Acted = $false; LastReport = $null; LastFolder = $null; LastAction = ''; RestoreSource = $null
-        Rows = $meetings; CopyRows = $copies; Items = $items; Lines = [Collections.Generic.List[string]]::new()
+        Rows = $meetings; CopyRows = $copies; OccurrenceRows = $occurrenceRows; OccurrenceRow = $null; Items = $items; Lines = [Collections.Generic.List[string]]::new()
         Shared = $shared; Timer = $timer; Job = $null; Runspace = $null
         # The progress of the run in course (Set-MclGuiProgress): its step, its start, the part done (-1: none yet).
         Progress = @{ Active = $false; Step = ''; Started = [datetime]::UtcNow; Fraction = -1.0; Stopping = $false }
@@ -589,6 +662,14 @@ function New-MclForm {
         })
     $controls.SelectAll.Add_Click({ Set-MclGuiSelection $true })
     $controls.SelectNone.Add_Click({ Set-MclGuiSelection $false })
+    # The occurrences of a series: Occurrences..., or a double-click on the series.
+    $controls.PickOccurrences.Add_Click({ Show-MclGuiOccurrences })
+    $controls.Meetings.Add_MouseDoubleClick({ Show-MclGuiOccurrences })
+    $controls.OccurrenceAll.Add_Click({ [MeetingCleanupNative.GuiRows]::SetOccurrences($script:Gui.OccurrenceRows, $true); Update-MclGuiOccurrenceCount })
+    $controls.OccurrenceNone.Add_Click({ [MeetingCleanupNative.GuiRows]::SetOccurrences($script:Gui.OccurrenceRows, $false); Update-MclGuiOccurrenceCount })
+    $controls.OccurrenceList.AddHandler([Windows.Controls.Primitives.ButtonBase]::ClickEvent, [Windows.RoutedEventHandler] { Update-MclGuiOccurrenceCount })
+    $controls.OccurrenceOk.Add_Click({ Complete-MclGuiOccurrences })
+    $controls.OccurrenceCancel.Add_Click({ Hide-MclGuiOccurrences })
     $controls.Meetings.Add_SelectionChanged({ Update-MclGuiCopies })
     # A box ticked or unticked in the list: the action button counts again. A column header: the list is sorted.
     $controls.Meetings.AddHandler([Windows.Controls.Primitives.ButtonBase]::ClickEvent, [Windows.RoutedEventHandler] { param($sender, $e) if ($e.OriginalSource -is [Windows.Controls.GridViewColumnHeader]) { Set-MclGuiSort $sender $e.OriginalSource } else { Update-MclGuiState } })
@@ -603,6 +684,7 @@ function New-MclForm {
     $controls.ModeRooms.Add_Checked({ Update-MclGuiState; Update-MclGuiOrganizerHint })
     $controls.AuthMode.Add_SelectionChanged({ Update-MclGuiState })
     $controls.ScopeMailboxes.Add_Click({ Update-MclGuiState })
+    $controls.SeriesOccurrences.Add_Click({ Update-MclGuiState })
     $controls.Browse.Add_Click({
             $dialog = [Microsoft.Win32.OpenFileDialog]::new()
             $dialog.Filter = 'Addresses (*.txt;*.csv)|*.txt;*.csv|All files (*.*)|*.*'
@@ -633,11 +715,21 @@ function Update-MclGuiState {
     # Rooms: every meeting of the rooms given; a transfer moves the meetings of organizers only (also when the
     # meetings in the list come from a rooms search and the mode was switched back).
     $roomsResult = $g.Result -and [string](Get-MclProperty $g.Result.Request 'Mode') -eq 'Rooms'
-    if (($rooms -or $roomsResult) -and $c.ActionTransfer.IsChecked) { $c.ActionRemove.IsChecked = $true }
-    $c.ActionTransfer.IsEnabled = -not ($rooms -or $roomsResult)
+    # Series by occurrences: the option of the window, or the meetings in the list searched so. A transfer moves
+    # whole series only.
+    $byOccurrence = [bool]$c.SeriesOccurrences.IsChecked -and -not $rooms
+    $occurrenceResult = $g.Result -and [string](Get-MclProperty $g.Result.Request 'SeriesScope') -eq 'Occurrences'
+    $noTransfer = $rooms -or $roomsResult -or $byOccurrence -or $occurrenceResult
+    if ($noTransfer -and $c.ActionTransfer.IsChecked) { $c.ActionRemove.IsChecked = $true }
+    $c.ActionTransfer.IsEnabled = -not $noTransfer
     $c.SearchCard.IsEnabled = -not $rooms
+    $c.SeriesOccurrences.IsEnabled = -not $rooms
     $c.WhoTitle.Text = if ($rooms) { 'Rooms' } else { 'Organizers' }
-    $c.PeriodHint.Text = if ($rooms) { 'Every meeting of the rooms in the period, whatever its organizer. A series: only its occurrences in the period are acted on (the series goes on outside it).' } else { 'A series is found when one of its occurrences falls in the period, and is handled as a whole.' }
+    $c.PeriodHint.Text = if ($rooms) { 'Every meeting of the rooms in the period, whatever its organizer. A series: only its occurrences in the period are acted on (the series goes on outside it); Occurrences... chooses among them.' }
+        elseif ($byOccurrence) { 'A series: only its occurrences in the period are acted on; Occurrences... (or a double-click on the series) chooses them one by one. The series goes on outside the period.' }
+        else { 'A series is found when one of its occurrences falls in the period, and is handled as a whole.' }
+    $selectedRow = $c.Meetings.SelectedItem
+    $c.PickOccurrences.IsEnabled = -not $g.Running -and -not $g.Acted -and $null -ne $selectedRow -and [MeetingCleanupNative.Fast]::Text($selectedRow.Meeting, 'Scope') -eq 'Occurrences'
     $cancel = [bool]$c.ActionCancel.IsChecked
     $transfer = [bool]$c.ActionTransfer.IsChecked
     $c.Comment.IsEnabled = $cancel
@@ -662,6 +754,57 @@ function Set-MclGuiSelection {
     if (-not $g -or $g.Running -or $g.Acted) { return }
     # Compiled rows notify their box: no redraw of the whole list.
     [MeetingCleanupNative.GuiRows]::SetSelected($g.Rows, $Value)
+    Update-MclGuiState
+}
+
+function Show-MclGuiOccurrences {
+    <# The occurrences of the series selected, to tick or untick (only for a series limited to its occurrences). #>
+    $g = $script:Gui
+    if (-not $g -or $g.Running -or $g.Acted) { return }
+    $row = $g.Controls.Meetings.SelectedItem
+    if (-not $row -or [MeetingCleanupNative.Fast]::Text($row.Meeting, 'Scope') -ne 'Occurrences') { return }
+    $c = $g.Controls
+    $g.OccurrenceRow = $row
+    $g.OccurrenceRows.ReplaceAll([MeetingCleanupNative.GuiRows]::Occurrences($row.Meeting))
+    # A series unticked in the list opens with no occurrence ticked: OK alone never ticks it again.
+    if (-not $row.Selected) { [MeetingCleanupNative.GuiRows]::SetOccurrences($g.OccurrenceRows, $false) }
+    $c.OccurrenceTitle.Text = "Occurrences of '$($row.Subject)' in the period"
+    Update-MclGuiOccurrenceCount
+    # Esc and Enter belong to the panel while it is open (Esc closes the window otherwise).
+    $c.Close.IsCancel = $false; $c.OccurrenceCancel.IsCancel = $true; $c.OccurrenceOk.IsDefault = $true
+    $c.OccurrencePanel.Visibility = 'Visible'
+}
+
+function Update-MclGuiOccurrenceCount {
+    $g = $script:Gui
+    if (-not $g) { return }
+    $all = $g.OccurrenceRows.Count
+    $ticked = $all - [MeetingCleanupNative.GuiRows]::UntickedOccurrences($g.OccurrenceRows).Count
+    $g.Controls.OccurrenceCount.Text = if ($ticked) { '{0} of {1} ticked' -f $ticked, $all } else { 'None ticked: the series is left as it is' }
+}
+
+function Hide-MclGuiOccurrences {
+    $g = $script:Gui
+    $c = $g.Controls
+    $c.OccurrencePanel.Visibility = 'Collapsed'
+    $c.OccurrenceCancel.IsCancel = $false; $c.OccurrenceOk.IsDefault = $false; $c.Close.IsCancel = $true
+    $g.OccurrenceRow = $null
+}
+
+function Complete-MclGuiOccurrences {
+    <# OK: the occurrences unticked are left out of the action (SkippedOccurrences); none ticked = the series unticked. #>
+    $g = $script:Gui
+    $row = $g.OccurrenceRow
+    if ($row) {
+        $skipped = [Collections.Generic.List[string]]::new()
+        foreach ($k in [MeetingCleanupNative.GuiRows]::UntickedOccurrences($g.OccurrenceRows)) { $skipped.Add($k) }
+        $row.Meeting.SkippedOccurrences = $skipped
+        $all = $g.OccurrenceRows.Count
+        $row.Kind = [MeetingCleanupNative.GuiRows]::KindText($row.Meeting)
+        $row.Selected = ($all - $skipped.Count) -gt 0
+        Add-MclGuiLine 'Info' ("'{0}': {1} of {2} occurrence(s) ticked" -f $row.Subject, ($all - $skipped.Count), $all)
+    }
+    Hide-MclGuiOccurrences
     Update-MclGuiState
 }
 
@@ -1154,7 +1297,7 @@ function Invoke-MclGuiSearch {
     )
     $rooms = [bool]$c.ModeRooms.IsChecked
     $requestArgs = if ($rooms) { @{ Settings = $cfg; Room = @(Split-MclAddressList @($c.Organizer.Text)); Subject = $c.Subject.Text.Trim(); Action = 'Report' } }
-        else { @{ Settings = $cfg; Organizer = @($c.Organizer.Text); Subject = $c.Subject.Text.Trim(); SearchIn = $scopes; Action = 'Report' } }
+        else { @{ Settings = $cfg; Organizer = @($c.Organizer.Text); Subject = $c.Subject.Text.Trim(); SearchIn = $scopes; Action = 'Report'; SeriesScope = $(if ($c.SeriesOccurrences.IsChecked) { 'Occurrences' } else { 'Whole' }) } }
     if ($c.StartDate.SelectedDate) { $requestArgs.Start = [datetime]$c.StartDate.SelectedDate }
     if ($c.EndDate.SelectedDate) { $requestArgs.End = [datetime]$c.EndDate.SelectedDate }
     if ($c.ScopeMailboxes.IsChecked -and $c.MailboxFile.Text.Trim()) { $requestArgs.MailboxFile = $c.MailboxFile.Text.Trim() }

@@ -9,7 +9,7 @@
 //   GuiRows   the rows of the window (compiled objects: WPF binds and scrolls them without PowerShell)
 //
 // Author : Nicolas Fabert
-// Version: 1.2.3
+// Version: 1.3.0
 
 using System;
 using System.Collections;
@@ -28,7 +28,7 @@ namespace MeetingCleanupNative
 {
     public static class Fast
     {
-        public const string Version = "1.2.3";
+        public const string Version = "1.3.0";
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
         static readonly string[] CopyRoles = { "Organizer", "Attendee", "Room" };
 
@@ -128,7 +128,8 @@ namespace MeetingCleanupNative
                 "Start", start, "End", end, "StartText", FormatDate(start, zone, false, false), "EndText", FormatDate(end, zone, false, false), "NextInPeriod", "",
                 "Recurrence", Recurrence(recurrence), "Location", "", "Cancelled", Flag(ev, "isCancelled"), "OrganizerCopy", "Not checked",
                 "Attendees", new object[0], "Copies", new List<object>(), "Selected", true, "Status", "Found", "Notes", new List<string>(), "SubjectFromRoom", false,
-                "Scope", "Whole", "Occurrences", 0, "RecurrenceData", null, "TimeZone", "", "NewOrganizer", "", "NewMeetingId", "", "TransferMethod", "");
+                "Scope", "Whole", "Occurrences", 0, "RecurrenceData", null, "TimeZone", "", "NewOrganizer", "", "NewMeetingId", "", "TransferMethod", "",
+                "SkippedOccurrences", new List<string>());
         }
 
         /// <summary>
@@ -219,6 +220,9 @@ namespace MeetingCleanupNative
             p.Add(new PSNoteProperty("ActionUtc", ""));
             p.Add(new PSNoteProperty("Occurrence", ""));
             p.Add(new PSNoteProperty("OccurrenceStart", ""));
+            // The slot of the occurrence in the series (its original start, UTC, to the minute): the same in every copy,
+            // even when one copy was moved; the key of SkippedOccurrences.
+            p.Add(new PSNoteProperty("OccurrenceKey", ""));
             p.Add(new PSNoteProperty("SeriesId", ""));
             return o;
         }
@@ -305,7 +309,7 @@ namespace MeetingCleanupNative
         /// <summary>One row per meeting, for the CSV and the HTML (Get-MclMeetingRows).</summary>
         public static Table MeetingTable(object meetings)
         {
-            var t = new Table("MeetingId", "Subject", "Organizer", "OrganizerName", "Kind", "Scope", "Occurrences", "NewOrganizer", "NewMeetingId", "TransferMethod",
+            var t = new Table("MeetingId", "Subject", "Organizer", "OrganizerName", "Kind", "Scope", "Occurrences", "OccurrencesSkipped", "NewOrganizer", "NewMeetingId", "TransferMethod",
                 "StartText", "EndText", "NextInPeriod", "Recurrence", "Location", "OrganizerCopy", "Copies", "RoomCopies", "AttendeeCopies", "NotProcessed",
                 "Cancelled", "Selected", "Status", "Notes");
             foreach (var m in Items(meetings))
@@ -316,7 +320,7 @@ namespace MeetingCleanupNative
                 var notes = new List<string>();
                 foreach (var n in Items(Prop(m, "Notes"))) { notes.Add(ToText(n)); }
                 t.Rows.Add(new object[] {
-                    Text(m, "MeetingId"), Text(m, "Subject"), Text(m, "Organizer"), Text(m, "OrganizerName"), Text(m, "Kind"), Text(m, "Scope"), ToInt(Prop(m, "Occurrences")),
+                    Text(m, "MeetingId"), Text(m, "Subject"), Text(m, "Organizer"), Text(m, "OrganizerName"), Text(m, "Kind"), Text(m, "Scope"), ToInt(Prop(m, "Occurrences")), SkippedCount(m),
                     Text(m, "NewOrganizer"), Text(m, "NewMeetingId"), Text(m, "TransferMethod"),
                     Text(m, "StartText"), Text(m, "EndText"), Text(m, "NextInPeriod"), Text(m, "Recurrence"), Text(m, "Location"), Text(m, "OrganizerCopy"),
                     copies.Count, CountRole(copies, "Room"), CountRole(copies, "Attendee"), notProcessed,
@@ -329,6 +333,14 @@ namespace MeetingCleanupNative
         {
             if (v == null) { return 0; }
             try { return (int)LanguagePrimitives.ConvertTo(v, typeof(int), Inv); } catch (Exception) { return 0; }
+        }
+
+        /// <summary>How many occurrences of a series the user left out (SkippedOccurrences, chosen in the window).</summary>
+        public static int SkippedCount(object meeting)
+        {
+            var keys = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var k in Items(Prop(meeting, "SkippedOccurrences"))) { var s = ToText(k); if (s.Length > 0) { keys.Add(s); } }
+            return keys.Count;
         }
 
         /// <summary>One row per copy (Get-MclCopyRows).</summary>
@@ -625,13 +637,30 @@ namespace MeetingCleanupNative
         public string Start { get; set; }
         public string Subject { get; set; }
         public string Who { get; set; }
-        public string Kind { get; set; }
+        string _kind;
+        public string Kind { get { return _kind; } set { if (_kind != value) { _kind = value; Notify("Kind"); } } }
         public string OrganizerCopy { get; set; }
         public int Copies { get; set; }
         public int Rooms { get; set; }
         public string CopiesText { get; set; }
         public string Status { get; set; }
         public object Meeting { get; set; }
+        public event PropertyChangedEventHandler PropertyChanged;
+        void Notify(string name) { var h = PropertyChanged; if (h != null) { h(this, new PropertyChangedEventArgs(name)); } }
+    }
+
+    /// <summary>An occurrence of a series, in the window (Occurrences...): ticked = acted on.</summary>
+    public sealed class OccurrenceRow : INotifyPropertyChanged
+    {
+        bool _selected;
+        public bool Selected { get { return _selected; } set { if (_selected != value) { _selected = value; Notify("Selected"); } } }
+        /// <summary>The slot of the occurrence (OccurrenceKey of its copies): the key of SkippedOccurrences.</summary>
+        public string Key { get; set; }
+        public DateTime StartUtc { get; set; }
+        public string Start { get; set; }
+        public int Copies { get; set; }
+        public int Rooms { get; set; }
+        public string Organizer { get; set; }
         public event PropertyChangedEventHandler PropertyChanged;
         void Notify(string name) { var h = PropertyChanged; if (h != null) { h(this, new PropertyChangedEventArgs(name)); } }
     }
@@ -679,7 +708,7 @@ namespace MeetingCleanupNative
                     Start = Fast.Text(m, "StartText"),
                     Subject = Fast.Text(m, "Subject"),
                     Who = name.Length > 0 ? name : Fast.Text(m, "Organizer"),
-                    Kind = Fast.Text(m, "Scope") == "Occurrences" ? string.Format(CultureInfo.InvariantCulture, "{0} occ.", Fast.Prop(m, "Occurrences")) : Fast.Text(m, "Kind"),
+                    Kind = KindText(m),
                     OrganizerCopy = Fast.Text(m, "OrganizerCopy"),
                     Copies = copies.Count,
                     Rooms = rooms,
@@ -689,6 +718,76 @@ namespace MeetingCleanupNative
                 });
             }
             return rows;
+        }
+
+        /// <summary>The Kind column: Single, Series, or the occurrences of a series acted on (2 occ., 1/3 occ.).</summary>
+        public static string KindText(object m)
+        {
+            if (Fast.Text(m, "Scope") != "Occurrences") { return Fast.Text(m, "Kind"); }
+            int all = 0;
+            try { all = (int)LanguagePrimitives.ConvertTo(Fast.Prop(m, "Occurrences"), typeof(int), CultureInfo.InvariantCulture); } catch (Exception) { all = 0; }
+            int skipped = Fast.SkippedCount(m);
+            return skipped > 0 ? string.Format(CultureInfo.InvariantCulture, "{0}/{1} occ.", Math.Max(0, all - skipped), all) : string.Format(CultureInfo.InvariantCulture, "{0} occ.", all);
+        }
+
+        /// <summary>
+        /// The occurrences of a series limited to the period (Scope Occurrences), one row each, from its copies: when,
+        /// how many copies and rooms hold it, whether the organizer does; ticked unless left out (SkippedOccurrences).
+        /// </summary>
+        public static List<object> Occurrences(object meeting)
+        {
+            var skipped = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var k in Fast_Items(Fast.Prop(meeting, "SkippedOccurrences"))) { var s = Fast.ToText(k); if (s.Length > 0) { skipped.Add(s); } }
+            var byKey = new Dictionary<string, OccurrenceRow>(StringComparer.Ordinal);
+            var shown = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+            foreach (var c in Fast_Items(Fast.Prop(meeting, "Copies")))
+            {
+                // By the slot of the occurrence (a copy moved to another time is the same occurrence).
+                var key = OccurrenceKeyOf(c);
+                if (key.Length == 0 || Fast.Text(c, "EventId").Length == 0) { continue; }
+                OccurrenceRow row;
+                if (!byKey.TryGetValue(key, out row))
+                {
+                    DateTime when;
+                    if (!DateTime.TryParse(key, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out when)) { when = DateTime.MinValue; }
+                    row = new OccurrenceRow { Key = key, StartUtc = when, Start = Fast.Text(c, "Occurrence"), Organizer = "-", Selected = !skipped.Contains(key) };
+                    byKey[key] = row;
+                    shown[key] = new HashSet<string>(StringComparer.Ordinal);
+                }
+                shown[key].Add(Fast.Text(c, "Occurrence"));
+                row.Copies++;
+                var role = Fast.Text(c, "Role");
+                if (role == "Room") { row.Rooms++; }
+                else if (role == "Organizer") { row.Organizer = "Present"; row.Start = Fast.Text(c, "Occurrence"); }
+            }
+            // An occurrence moved in some calendars only: the organizer's time, and said.
+            foreach (var pair in byKey) { if (shown[pair.Key].Count > 1) { pair.Value.Start = pair.Value.Start + " (moved in some copies)"; } }
+            var list = new List<OccurrenceRow>(byKey.Values);
+            list.Sort((a, b) => a.StartUtc.CompareTo(b.StartUtc));
+            return new List<object>(list);
+        }
+
+        /// <summary>The slot of an occurrence copy (OccurrenceKey; OccurrenceStart for a copy of an older report).</summary>
+        public static string OccurrenceKeyOf(object copy)
+        {
+            var k = Fast.Text(copy, "OccurrenceKey");
+            return k.Length > 0 ? k : Fast.Text(copy, "OccurrenceStart");
+        }
+
+        /// <summary>The occurrences unticked in the window: their keys, for SkippedOccurrences.</summary>
+        public static List<string> UntickedOccurrences(IEnumerable rows)
+        {
+            var keys = new List<string>();
+            if (rows == null) { return keys; }
+            foreach (var r in rows) { var row = r as OccurrenceRow; if (row != null && !row.Selected) { keys.Add(row.Key); } }
+            return keys;
+        }
+
+        /// <summary>Ticks or unticks every occurrence of the panel (Tick all / Untick all).</summary>
+        public static void SetOccurrences(IEnumerable rows, bool value)
+        {
+            if (rows == null) { return; }
+            foreach (var r in rows) { var row = r as OccurrenceRow; if (row != null) { row.Selected = value; } }
         }
 
         /// <summary>The rows of the copies of one meeting (Update-MclGuiCopies).</summary>

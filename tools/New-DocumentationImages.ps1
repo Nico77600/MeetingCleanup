@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     Renders the images of the guide and the readme: the window (light and dark, after a search, during a search,
-    after a cancellation, after a restore, in rooms mode, after a transfer) and the HTML report, from fictitious data.
+    after a cancellation, after a restore, in rooms mode, the occurrences of a series, after a transfer) and the HTML report, from fictitious data.
 
 .DESCRIPTION
     No tenant and no real data: the meetings come from the simulated tenant of the tests
@@ -9,11 +9,11 @@
     rendered off screen (RenderTargetBitmap); the report is opened by Microsoft Edge headless.
 
     Writes docs\images\gui-search-light.png, gui-search-dark.png, gui-progress-light.png, gui-done-light.png, gui-restore-light.png,
-    gui-rooms-light.png, gui-transfer-light.png, report-overview.png, report-dark.png, report-transfers.png. Needs an interactive session (WPF) and Microsoft Edge.
+    gui-rooms-light.png, gui-occurrences-light.png, gui-transfer-light.png, report-overview.png, report-dark.png, report-transfers.png. Needs an interactive session (WPF) and Microsoft Edge.
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.3
+    Version : 1.3.0
 #>
 #Requires -Version 7.4
 [CmdletBinding()]
@@ -180,6 +180,29 @@ $module = Get-Module MeetingCleanup
     $rooms.Controls.Meetings.SelectedIndex = 0
     & $render $rooms (Join-Path $Destination 'gui-rooms-light.png')
     $rooms.Form.Close()
+
+    # ---- series by occurrences: the Mondays of January of the weekly review, two of them ticked ----------
+    . $seed
+    $series = New-MclForm -Configuration $settings -Theme 'Light'
+    $series.Form.WindowStartupLocation = 'Manual'; $series.Form.Left = -4000; $series.Form.ShowInTaskbar = $false; $series.Form.Show()
+    $series.Controls.Organizer.Text = "megan.bowen@$d"
+    $series.Controls.Subject.Text = 'Weekly sales review'
+    $series.Controls.StartDate.SelectedDate = [datetime]"$year-01-01"
+    $series.Controls.EndDate.SelectedDate = [datetime]"$year-01-31"
+    $series.Controls.ConnectionExpander.IsExpanded = $false
+    $series.Controls.SeriesOccurrences.IsChecked = $true
+    $series.Controls.ActionCancel.IsChecked = $true
+    $series.Controls.Comment.Text = 'No sales review on these Mondays (inventory).'
+    Update-MclGuiState
+    Invoke-MclGuiSearch
+    $series.Controls.Meetings.SelectedIndex = 0
+    Show-MclGuiOccurrences
+    $occurrences = @($script:Gui.OccurrenceRows)
+    for ($i = 0; $i -lt $occurrences.Count; $i++) { $occurrences[$i].Selected = $i -in 1, 2 }
+    Update-MclGuiOccurrenceCount
+    & $render $series (Join-Path $Destination 'gui-occurrences-light.png')
+    Hide-MclGuiOccurrences
+    $series.Form.Close()
 
     # ---- transfer: Megan (mailbox kept) moved by Exchange Online, Lynne (deleted) re-created ---------------
     . $seed

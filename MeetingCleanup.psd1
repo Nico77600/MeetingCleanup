@@ -8,7 +8,7 @@
 #
 @{
     RootModule        = 'MeetingCleanup.psm1'
-    ModuleVersion     = '1.2.3'
+    ModuleVersion     = '1.3.0'
     GUID              = '3264d592-5f9b-4155-8bef-cb2bb4feff0e'
     Author            = 'Nicolas Fabert'
     Copyright         = '(c) 2026 Nicolas Fabert. MIT License.'

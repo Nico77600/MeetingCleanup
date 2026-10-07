@@ -45,6 +45,7 @@ This tool does it for **Exchange Online** with one search for every case, a repo
 - **Every copy, wherever the meeting is found**: one copy of a meeting holds its whole attendee list. Every internal attendee, room and member of an invited group is then asked for its own copy, by **iCalUId** (the same in every copy). External or deleted attendees are listed, not processed.
 - **Organizer present or gone**: its calendar when the mailbox exists; the rooms, a list of mailboxes or every mailbox of the tenant when it does not — from the old address or the X500 address of the deleted mailbox. A list of organizers is searched in one pass.
 - **Rooms over a period** (`-Room`, `-RoomFile`): every meeting of the rooms, whatever its organizer. A series is limited to the occurrences the rooms hold in the period; it goes on before and after.
+- **One occurrence of a series** (`-SeriesScope Occurrences`, or *Series: only the occurrences of the period* in the window): a series is limited to its occurrences in the period — one day, one occurrence — for everyone (*Cancel*) or silently (*Remove*). In the window, **Occurrences...** ticks the ones to act on; the series goes on.
 - **Nothing by surprise**: the report is the default action. Every action shows exactly what it will do and asks to type **YES**; a backup (`Backup.json`) is written before any change; each copy removed is read again to check it is gone. `-FromReport` acts on exactly the meetings of a reviewed report.
 - **Large tenants**: `$batch` requests of Microsoft Graph, 16 in flight; the window runs every search and action in the background and keeps answering, with a progress bar and the time left — about 6,000 mailboxes read in a minute and a half in the lab.
 - **Application permissions of Microsoft Graph** and a certificate: no user account, no module for the search, Remove, Cancel and a re-creation.
@@ -94,6 +95,12 @@ A removed copy stays restorable for the retention of deleted items (14 days by d
 </table>
 
 <details>
+<summary><b>Occurrences of a series</b> &middot; the Mondays of the period, only the ones ticked are cancelled or removed</summary>
+<br>
+<a href="docs/images/gui-occurrences-light.png"><img alt="The occurrences of a weekly series in the period, two of four ticked: only they are acted on, the series goes on" src="docs/images/gui-occurrences-light.png"></a>
+</details>
+
+<details>
 <summary><b>Transfers tab</b> &middot; after a transfer: from whom to whom, how, the new meeting, the old one and its copies</summary>
 <br>
 <a href="docs/images/report-transfers.png"><img alt="The Transfers tab of a transfer report: one meeting moved by Exchange Online (answers kept, old copies updated in place), one re-created for a deleted organizer (2 attendees and 1 room invited, 3 old copies removed)" src="docs/images/report-transfers.png"></a>
@@ -125,7 +132,7 @@ Each run writes `MeetingCleanup-Meetings.csv`, `-Copies.csv`, `-Organizers.csv` 
 Download `MeetingCleanup-<version>.zip` from the [latest release](https://github.com/Nico77600/MeetingCleanup/releases/latest), extract it (for example in `C:\Tools`) and unblock the files (command at the top of this page).
 
 ```powershell
-cd C:\Tools\MeetingCleanup-1.2.3
+cd C:\Tools\MeetingCleanup-1.3.0
 notepad .\config\MeetingCleanup.config.psd1          # tenant, application, certificate thumbprint
 
 .\Invoke-MeetingCleanup.ps1 -Gui                     # the window: search, untick, act, restore
@@ -135,10 +142,11 @@ notepad .\config\MeetingCleanup.config.psd1          # tenant, application, cert
 .\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Action Cancel -Comment 'Megan has left the company.'
 .\Invoke-MeetingCleanup.ps1 -Organizer john.doe@contoso.com -SearchIn Rooms, AllMailboxes -Action Transfer -NewOrganizer jane.roe@contoso.com
 .\Invoke-MeetingCleanup.ps1 -Room room-paris-01@contoso.com -Start 2026-11-02 -End 2026-11-13 -Action Cancel -Comment 'Closed for works.'
+.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Subject 'Weekly sales review' -SeriesScope Occurrences -Start 2026-11-16 -End 2026-11-16 -Action Cancel -Comment 'Not this Monday.'
 .\Invoke-MeetingCleanup.ps1 -Action Restore -FromReport .\reports\MeetingCleanup_Remove_20261105-093000
 ```
 
-One command per everyday question — who still organizes what, a leaver with or without mailbox, a transfer, one series, rooms closed, the leavers of the month, undo a removal: see the [user guide](docs/MeetingCleanup-UserGuide.md).
+One command per everyday question — who still organizes what, a leaver with or without mailbox, a transfer, one series, one occurrence of a series, rooms closed, the leavers of the month, undo a removal: see the [user guide](docs/MeetingCleanup-UserGuide.md).
 
 The zip of each [release](https://github.com/Nico77600/MeetingCleanup/releases) contains only the files needed to run, with both guides in HTML; `.\tools\New-MeetingCleanupPackage.ps1` builds the same package from the repository.
 
@@ -158,7 +166,7 @@ Both guides also exist as a single HTML file with a light and a dark theme (`doc
 pwsh -STA -File .\tools\Measure-MeetingCleanup.ps1 -Meetings 600 -Search -Gui   # time of each step, synthetic data
 ```
 
-The tool was also validated on a lab tenant (about 6,000 mailboxes, 1,860 rooms): organizers present, soft-deleted and deleted, lists of organizers, Remove and Restore without any message, Cancel, rooms over a period with series, transfers moved by Exchange Online and re-created for a deleted mailbox ([developer guide, appendix C](docs/MeetingCleanup-Guide.md#appendix-c---lab-measurements)).
+The tool was also validated on a lab tenant (about 6,000 mailboxes, 1,860 rooms): organizers present, soft-deleted and deleted, lists of organizers, Remove and Restore without any message, Cancel, rooms over a period with series, one occurrence of a series cancelled or chosen in the window, transfers moved by Exchange Online and re-created for a deleted mailbox ([developer guide, appendix C](docs/MeetingCleanup-Guide.md#appendix-c---lab-measurements)).
 
 ## License
 

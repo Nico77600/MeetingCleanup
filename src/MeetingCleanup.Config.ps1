@@ -16,14 +16,14 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.3
+    Version : 1.3.0
 #>
 
 # Section.Key of the configuration file -> key of the settings hashtable.
 $script:ConfigSchema = [ordered]@{
     Tenant         = [ordered]@{ TenantId = 'TenantId'; Organization = 'Organization' }
     Authentication = [ordered]@{ Mode = 'AuthMode'; AppId = 'AppId'; CertificateThumbprint = 'CertificateThumbprint'; ClientSecretVariable = 'ClientSecretVariable' }
-    Search         = [ordered]@{ SearchIn = 'SearchIn'; PastDays = 'PastDays'; FutureDays = 'FutureDays'; Rooms = 'Rooms'; RoomFile = 'RoomFile'; MailboxFile = 'MailboxFile' }
+    Search         = [ordered]@{ SearchIn = 'SearchIn'; PastDays = 'PastDays'; FutureDays = 'FutureDays'; SeriesScope = 'SeriesScope'; Rooms = 'Rooms'; RoomFile = 'RoomFile'; MailboxFile = 'MailboxFile' }
     Cleanup        = [ordered]@{ CancelComment = 'CancelComment'; Verify = 'Verify' }
     Restore        = [ordered]@{ Connection = 'RestoreConnection'; UserPrincipalName = 'RestoreUser'; WindowMinutes = 'RestoreWindowMinutes'; ReAccept = 'RestoreReAccept' }
     Transfer       = [ordered]@{ Method = 'TransferMethod'; Comment = 'TransferComment' }
@@ -33,6 +33,8 @@ $script:ConfigSchema = [ordered]@{
 }
 
 $script:SearchScopes = @('Organizer', 'Rooms', 'Mailboxes', 'AllMailboxes')
+# A series: the whole series (every occurrence, past ones included), or only its occurrences in the period.
+$script:SeriesScopes = @('Whole', 'Occurrences')
 $script:Actions = @('Report', 'Remove', 'Cancel', 'Restore', 'Transfer')
 $script:TransferMethods = @('Auto', 'Native', 'Recreate')
 $script:GuidPattern = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
@@ -51,6 +53,7 @@ function Get-MclDefaultConfiguration {
         SearchIn              = @('Organizer', 'Rooms')
         PastDays              = 0
         FutureDays            = 365
+        SeriesScope           = 'Whole'
         Rooms                 = @()
         RoomFile              = ''
         MailboxFile           = ''
@@ -153,6 +156,7 @@ function Test-MclConfiguration {
     if ($scopes.Count -eq 0 -or @($scopes | Where-Object { $_ -notin $script:SearchScopes }).Count) { [void]$problems.Add("Search.SearchIn must contain one or more of: $($script:SearchScopes -join ', ').") }
     & $number 'PastDays' 'Search.PastDays' 0 3650
     & $number 'FutureDays' 'Search.FutureDays' 0 3650
+    if ([string]$c.SeriesScope -notin $script:SeriesScopes) { [void]$problems.Add("Search.SeriesScope must be 'Whole' or 'Occurrences'.") }
     foreach ($room in @($c.Rooms)) { if ([string]$room -notmatch $script:SmtpPattern) { [void]$problems.Add("Search.Rooms: '$room' is not an SMTP address.") } }
     if ($c.Verify -isnot [bool]) { [void]$problems.Add('Cleanup.Verify must be $true or $false.') }
     if ([string]$c.RestoreConnection -notin 'Application', 'Interactive') { [void]$problems.Add("Restore.Connection must be 'Application' or 'Interactive'.") }
@@ -265,6 +269,8 @@ function New-MclRequest {
         What one run does, from the command line or the window, with the defaults of the configuration.
         Mode: 'Organizers' (the meetings of -Organizer / -OrganizerFile) or 'Rooms' (every meeting of the rooms of
         -Room / -RoomFile, whatever its organizer; a series is then limited to its occurrences in the period).
+        SeriesScope: 'Whole' (a series is acted on whole) or 'Occurrences' (only its occurrences in the period, which
+        can then be chosen one by one); always 'Occurrences' in rooms mode.
     #>
     param(
         [Parameter(Mandatory = $true)][hashtable]$Settings,
@@ -284,7 +290,8 @@ function New-MclRequest {
         [string]$FromReport,
         [string]$NewOrganizer,
         [string]$TransferMethod,
-        [Nullable[datetime]]$TransferFrom
+        [Nullable[datetime]]$TransferFrom,
+        [string]$SeriesScope
     )
 
     $period = Get-MclDefaultPeriod -Settings $Settings
@@ -308,6 +315,7 @@ function New-MclRequest {
         Subject        = [string]$Subject
         MeetingId      = @($MeetingId | ForEach-Object { ([string]$_ -split '[;,\s]+') } | Where-Object { $_ } | ForEach-Object { $_.ToUpperInvariant() } | Select-Object -Unique)
         SearchIn       = if ($mode -eq 'Rooms') { @('Rooms') } elseif ($SearchIn) { @($SearchIn | Select-Object -Unique) } else { @($Settings.SearchIn) }
+        SeriesScope    = if ($mode -eq 'Rooms') { 'Occurrences' } elseif ($SeriesScope) { $SeriesScope } elseif ($Settings.ContainsKey('SeriesScope') -and $Settings.SeriesScope) { [string]$Settings.SeriesScope } else { 'Whole' }
         Mailboxes      = @(Split-MclAddressList $Mailbox)
         MailboxFile    = if ($MailboxFile) { [IO.Path]::GetFullPath($MailboxFile, (Get-Location).Path) } else { [string]$Settings.MailboxFile }
         Action         = $Action
@@ -353,12 +361,16 @@ function Test-MclRequest {
                 if ($r.MailboxFile -and -not (Test-Path -LiteralPath $r.MailboxFile -PathType Leaf)) { [void]$problems.Add("Mailbox file not found: $($r.MailboxFile)") }
                 foreach ($a in @($r.Mailboxes)) { if ($a -notmatch $script:SmtpPattern) { [void]$problems.Add("Mailbox '$a' is not an SMTP address.") } }
             }
+            $scope = [string](Get-MclProperty $r 'SeriesScope')
+            if ($scope -and $scope -notin $script:SeriesScopes) { [void]$problems.Add("Series scope must be 'Whole' or 'Occurrences'.") }
+            if ($scope -eq 'Occurrences' -and $r.Action -in 'Remove', 'Cancel' -and -not $r.PeriodGiven) { [void]$problems.Add('Series by occurrences: give the period of the action (-Start and -End): the occurrences of the series in it are acted on.') }
         }
         if ($r.End -le $r.Start) { [void]$problems.Add('The end of the period must be after its start.') }
         foreach ($id in @($r.MeetingId)) { if ($id -notmatch '^[0-9A-F]{40,}$') { [void]$problems.Add("Meeting ID '$id' is not an iCalUId (hexadecimal, column MeetingId of the report).") } }
     }
     if ($r.Action -eq 'Transfer') {
         if ($mode -eq 'Rooms' -and -not $r.FromReport) { [void]$problems.Add('Transfer moves the meetings of organizers: give -Organizer or -OrganizerFile, not rooms.') }
+        elseif ([string](Get-MclProperty $r 'SeriesScope') -eq 'Occurrences' -and -not $r.FromReport) { [void]$problems.Add('Transfer moves whole series: -SeriesScope Occurrences cannot be transferred (use -SeriesScope Whole).') }
         if (-not $r.NewOrganizer) { [void]$problems.Add('Transfer: give the new organizer (-NewOrganizer), the SMTP address of a mailbox of the tenant.') }
         elseif ($r.NewOrganizer -notmatch $script:SmtpPattern) { [void]$problems.Add("New organizer '$($r.NewOrganizer)' is not an SMTP address.") }
         if ([string]$r.TransferMethod -notin $script:TransferMethods) { [void]$problems.Add("Transfer method must be one of: $($script:TransferMethods -join ', ').") }

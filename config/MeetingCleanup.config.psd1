@@ -2,7 +2,7 @@
 #  Meeting Cleanup - configuration file
 #  --------------------------------------------------------------------------
 #  Author  : Nicolas Fabert
-#  Version : 1.2.3
+#  Version : 1.3.0
 #
 #  Read by Invoke-MeetingCleanup.ps1 and by the window (-Gui). It is a PowerShell data file: text between
 #  quotes, $true / $false, numbers, @( ) for lists and @{ } for groups of settings. Lines starting with #
@@ -49,12 +49,16 @@
     #   Each meeting found is then looked up in the calendar of every internal attendee, room and member of
     #   an invited group, wherever it was found.
     #   PastDays / FutureDays: the default period, from today minus PastDays to today plus FutureDays.
-    #   A series is kept when one of its occurrences falls in the period, and handled as a whole.
+    #   A series is kept when one of its occurrences falls in the period.
+    #   SeriesScope: 'Whole' (default) acts on the whole series (every occurrence, past ones included);
+    #   'Occurrences' acts only on its occurrences in the period, which the window lets you choose one by one
+    #   (-SeriesScope). Rooms mode always acts on the occurrences of the period.
     # ---------------------------------------------------------------------
     Search = @{
         SearchIn    = @('Organizer', 'Rooms')
         PastDays    = 0
         FutureDays  = 365
+        SeriesScope = 'Whole'   # 'Whole' or 'Occurrences'
         Rooms       = @()     # room addresses added to the places API (a new room may take time to appear there)
         RoomFile    = ''      # file of room addresses
         MailboxFile = ''      # default file of the 'Mailboxes' scope

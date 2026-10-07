@@ -21,7 +21,7 @@
 
 .NOTES
     Author  : Nicolas Fabert
-    Version : 1.2.3
+    Version : 1.3.0
 #>
 
 $script:EventSelect = 'id,iCalUId,subject,type,organizer,isOrganizer,start,end,isCancelled,recurrence,responseStatus,showAs'
@@ -320,6 +320,7 @@ function Find-MclMeetings {
             Write-MclItem Ok ('{0:N0} organizers: {1:N0} with a mailbox {2} {3:N0} in the directory without a mailbox {2} {4:N0} not in the directory (deleted or X500)' -f $organizers.Count, (& $count 'Mailbox'), $dot, (& $count 'NoMailbox'), (& $count 'NotInDirectory')) -Icon People
         }
         if (-not $g.CanReadUsers) { $warnings.Add('No User.Read.All: the aliases of the organizer are not known, only the address typed is compared.'); Write-MclItem Warn $warnings[-1] }
+        if ([string](Get-MclProperty $Request 'SeriesScope') -eq 'Occurrences') { Write-MclItem Info 'A series: only its occurrences in the period are acted on (they can be chosen one by one in the window); the series goes on outside the period.' }
         if (@($Request.SearchIn) -contains 'Organizer' -and -not @($organizers | Where-Object State -eq 'Mailbox').Count) {
             Write-MclItem Info "No organizer mailbox to search: the meetings are searched in the other mailboxes ($((@($Request.SearchIn) | Where-Object { $_ -ne 'Organizer' } | ForEach-Object { Get-MclScopeText $_ }) -join ', '))."
         }
@@ -429,8 +430,11 @@ function Find-MclMeetings {
     $list = @($list | Sort-Object Start, Subject)
 
     # Rooms: a series is acted on only by its occurrences in the period (a room closed for two weeks does
-    # not end a series of a year), unless every occurrence of the series is in the period.
-    if ($roomsMode -and $list.Count) { Split-MclSeriesOccurrences -Meetings $list -Settings $Settings -Start $Request.Start -End $Request.End }
+    # not end a series of a year), unless every occurrence of the series is in the period. Organizers with
+    # -SeriesScope Occurrences: the occurrences of the period of each series, to be chosen in the window.
+    $byOccurrence = -not $roomsMode -and [string](Get-MclProperty $Request 'SeriesScope') -eq 'Occurrences'
+    if ($roomsMode -and $list.Count) { Split-MclSeriesOccurrences -Meetings $list -Settings $Settings -Start $Request.Start -End $Request.End -Source Rooms }
+    elseif ($byOccurrence -and @($list | Where-Object Kind -eq 'Series').Count) { Split-MclSeriesOccurrences -Meetings $list -Settings $Settings -Start $Request.Start -End $Request.End -Source Organizer }
     if ($roomsMode) {
         # The organizers of the meetings found, for the report (Organizers tab): who is concerned.
         $organizers = @($list | Group-Object OrganizerKey | ForEach-Object {
@@ -455,6 +459,7 @@ function Find-MclMeetings {
             Organizer = @($Request.Organizer); Start = $Request.Start.ToString('o'); End = $Request.End.ToString('o')
             StartText = (Format-MclDate $Request.Start $Settings.TimeZone) -replace ' 00:00$', ''; EndText = Format-MclDate $Request.End $Settings.TimeZone -PeriodEnd
             Subject = $Request.Subject; MeetingId = @($Request.MeetingId); SearchIn = @($Request.SearchIn); Mailboxes = @($Request.Mailboxes).Count; MailboxFile = $Request.MailboxFile
+            SeriesScope = $(if ($roomsMode -or $byOccurrence) { 'Occurrences' } else { 'Whole' })
             TimeZone = (Get-MclTimeZone $Settings.TimeZone).Id
         }
         Tenant          = [string]$g.TenantGuid
@@ -477,14 +482,18 @@ function Find-MclMeetings {
 
 function Split-MclSeriesOccurrences {
     <#
-        Rooms mode: each series is acted on by its occurrences in the period that the rooms searched hold (an
-        occurrence moved to another room is not one of them). Every copy of the series (organizer, attendees,
-        rooms) is replaced by these occurrences, each a copy of its own (Occurrence, the ID of the occurrence in
-        that mailbox, SeriesId). A series whose every occurrence is held by the rooms in the period is kept whole.
-        When the occurrences of the organizer or of a room searched cannot be read, the meeting is left as it is
+        A series acted on by its occurrences in the period, not whole. Every copy of the series (organizer,
+        attendees, rooms) is replaced by these occurrences, each a copy of its own (Occurrence, the ID of the
+        occurrence in that mailbox, SeriesId); the window can then leave some of them out (SkippedOccurrences).
+          -Source Rooms      rooms mode: the occurrences the rooms searched hold (one moved to another room is not
+                             one of them); a series whose every occurrence is there is kept whole.
+          -Source Organizer  -SeriesScope Occurrences: the occurrences of the organizer's calendar, or of the copies
+                             of the attendees and the rooms when the organizer has none (deleted mailbox).
+        When the occurrences of the organizer (or of a room searched) cannot be read, the meeting is left as it is
         (Not processed): never the whole series, never the attendees without their organizer.
     #>
-    param([Parameter(Mandatory = $true)][object[]]$Meetings, [Parameter(Mandatory = $true)][hashtable]$Settings, [datetime]$Start, [datetime]$End)
+    param([Parameter(Mandatory = $true)][object[]]$Meetings, [Parameter(Mandatory = $true)][hashtable]$Settings, [datetime]$Start, [datetime]$End,
+        [ValidateSet('Rooms', 'Organizer')][string]$Source = 'Rooms')
 
     $series = @($Meetings | Where-Object { $_.Kind -eq 'Series' -and @($_.Copies | Where-Object EventId).Count })
     if (-not $series.Count) { return }
@@ -510,16 +519,26 @@ function Split-MclSeriesOccurrences {
     }
     $res = Invoke-MclGraphBatch -Requests $requests.ToArray() -FollowPages -OnProgress { param($done, $total) Write-MclProgress ($done / [Math]::Max(1, $total)) ('{0:N0}/{1:N0} series copies: occurrences read' -f $done, $total) }
 
-    # The occurrences held by the rooms searched; the meetings that cannot be split safely.
+    # The occurrences that count (held by the rooms searched, or of the organizer); the meetings that cannot be
+    # split safely.
     $keys = @{}; $untouched = @{}
     for ($i = 0; $i -lt $series.Count; $i++) {
-        $roomIds = @($byMeeting[$i] | Where-Object { $copies[$_].Via -eq 'Room search' })
-        $unread = @(@($roomIds) + @($byMeeting[$i] | Where-Object { $copies[$_].Role -eq 'Organizer' }) | Where-Object { $res[$_].Status -ne 200 })
         if ($series[$i].OrganizerCopy -eq 'Not read') { $untouched[$i] = "the copy of its organizer could not be read"; continue }
-        if (-not $roomIds.Count) { $untouched[$i] = 'no copy of the rooms searched to read its occurrences from'; continue }
+        $orgIds = @($byMeeting[$i] | Where-Object { $copies[$_].Role -eq 'Organizer' })
+        if ($Source -eq 'Rooms') {
+            $sourceIds = @($byMeeting[$i] | Where-Object { $copies[$_].Via -eq 'Room search' })
+            if (-not $sourceIds.Count) { $untouched[$i] = 'no copy of the rooms searched to read its occurrences from'; continue }
+            $unread = @(@($sourceIds) + @($orgIds) | Where-Object { $res[$_].Status -ne 200 })
+        }
+        else {
+            # The organizer's calendar is the reference; without it (deleted mailbox), every copy read.
+            $sourceIds = @(if ($orgIds.Count) { $orgIds } else { $byMeeting[$i] | Where-Object { $res[$_].Status -eq 200 } })
+            if (-not $sourceIds.Count) { $untouched[$i] = 'no copy whose occurrences could be read'; continue }
+            $unread = @($orgIds | Where-Object { $res[$_].Status -ne 200 })
+        }
         if ($unread.Count) { $untouched[$i] = "occurrences of the period not read in $($copies[$unread[0]].Mailbox) ($(Get-MclMailboxProblem $res[$unread[0]]))"; continue }
         $set = [Collections.Generic.HashSet[string]]::new()
-        foreach ($id in $roomIds) { foreach ($o in @($res[$id].Values)) { if (-not [bool](Get-MclProperty $o 'isCancelled')) { [void]$set.Add((Get-MclTimeKey $o)) } } }
+        foreach ($id in $sourceIds) { foreach ($o in @($res[$id].Values)) { if (-not [bool](Get-MclProperty $o 'isCancelled')) { [void]$set.Add((Get-MclTimeKey $o)) } } }
         $keys[$i] = $set
     }
 
@@ -556,7 +575,11 @@ function Split-MclSeriesOccurrences {
     $split = 0; $occurrences = 0; $left = 0
     for ($i = 0; $i -lt $series.Count; $i++) {
         $m = $series[$i]
-        if ($whole.Contains($i)) { $m.Notes.Add('Every occurrence of the series is in the period, in the rooms searched: the series is handled as a whole.'); continue }
+        if ($whole.Contains($i)) {
+            if ($Source -eq 'Rooms') { $m.Notes.Add('Every occurrence of the series is in the period, in the rooms searched: the series is handled as a whole.'); continue }
+            # Asked for by occurrence: each one acted on (Cancel sends one cancellation each); said, not changed.
+            $m.Notes.Add('Every occurrence of the series is in the period: each one is acted on separately (one cancellation each with Cancel); -SeriesScope Whole acts on the series at once.')
+        }
         $m.Scope = 'Occurrences'
         if ($untouched.Contains($i)) {
             $left++
@@ -575,10 +598,11 @@ function Split-MclSeriesOccurrences {
                 $c.EventId = ''; $c.Result = 'Not processed'; $c.Detail = "occurrences of the period not read ($(Get-MclMailboxProblem $r)): the copy is left as it is"
                 $list.Add($c); continue
             }
-            # The occurrences of the rooms searched only (one moved to another room stays as it is).
+            # The occurrences that count only (rooms: one moved to another room stays as it is).
             $mine = @($r.Values | Where-Object { $keys[$i].Contains((Get-MclTimeKey $_)) })
             if (-not $mine.Count) {
-                $c.EventId = ''; $c.Result = 'No copy'; $c.Detail = 'no occurrence of the rooms searched in the period in this mailbox (declined, removed or moved)'
+                $c.EventId = ''; $c.Result = 'No copy'
+                $c.Detail = if ($Source -eq 'Rooms') { 'no occurrence of the rooms searched in the period in this mailbox (declined, removed or moved)' } else { 'no occurrence of the period in this mailbox (declined, removed or moved)' }
                 $list.Add($c); continue
             }
             foreach ($o in ($mine | Sort-Object { [MeetingCleanupNative.Fast]::ToUtc($_.start) })) {
@@ -587,6 +611,7 @@ function Split-MclSeriesOccurrences {
                 $when = ConvertTo-MclDateUtc $o.start
                 $occ.Occurrence = [MeetingCleanupNative.Fast]::FormatDate($when, $zone, $false, $false)
                 $occ.OccurrenceStart = $when.ToString('o')
+                $occ.OccurrenceKey = Get-MclTimeKey $o
                 $occ.SeriesId = $c.EventId
                 $list.Add($occ)
                 $occurrences++
@@ -595,9 +620,10 @@ function Split-MclSeriesOccurrences {
         $m.Copies.Clear()
         foreach ($c in $list) { $m.Copies.Add($c) }
         $m.Occurrences = $keys[$i].Count
-        $m.Notes.Add(('{0} occurrence(s) in the period in the rooms searched: only they are acted on, the series goes on outside the period.' -f $keys[$i].Count))
+        $m.Notes.Add(('{0} occurrence(s) in the period{1}: only they are acted on, the series goes on outside the period.' -f $keys[$i].Count, $(if ($Source -eq 'Rooms') { ' in the rooms searched' } else { '' })))
     }
-    Write-MclItem Info ('{0} series limited to their occurrences in the period ({1:N0} occurrence copies){2}{3}' -f $split, $occurrences, $(if ($whole.Count) { " $($script:Dot) $($whole.Count) entirely in the period, handled whole" }), $(if ($left) { " $($script:Dot) $left left as they are (occurrences not read)" })) -Icon Calendar
+    $wholeText = if ($whole.Count -and $Source -eq 'Rooms') { " $($script:Dot) $($whole.Count) entirely in the period, handled whole" } elseif ($whole.Count) { " $($script:Dot) $($whole.Count) entirely in the period" } else { '' }
+    Write-MclItem Info ('{0} series limited to their occurrences in the period ({1:N0} occurrence copies){2}{3}' -f $split, $occurrences, $wholeText, $(if ($left) { " $($script:Dot) $left left as they are (occurrences not read)" })) -Icon Calendar
     if ($left) { Write-MclItem Warn ('{0} series left as they are: the occurrences of their organizer or of a room could not be read (see the notes).' -f $left) }
 }
 
