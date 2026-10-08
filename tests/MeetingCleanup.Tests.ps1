@@ -14,7 +14,8 @@
 #>
 
 BeforeAll {
-    $script:Root = Split-Path $PSScriptRoot -Parent
+    $script:RepoRoot = Split-Path $PSScriptRoot -Parent
+    $script:Root = Join-Path $script:RepoRoot 'package'
     Import-Module (Join-Path $script:Root 'MeetingCleanup.psd1') -Force
     $script:Module = Get-Module MeetingCleanup
     . (Join-Path $PSScriptRoot 'MeetingCleanup.FakeGraph.ps1')
@@ -25,7 +26,7 @@ BeforeAll {
         $s = & $script:Module { Get-MclDefaultConfiguration }
         $s.TenantId = $script:Tenant; $s.AppId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'; $s.CertificateThumbprint = ('AB' * 20)
         $s.TimeZone = 'UTC'; $s.MaxRetries = 3; $s.MaxConcurrency = 4
-        $s.OutputPath = Join-Path $script:Root 'artifacts\test-reports'; $s.LogPath = Join-Path $script:Root 'artifacts\test-logs'
+        $s.OutputPath = Join-Path $script:RepoRoot 'artifacts\test-reports'; $s.LogPath = Join-Path $script:RepoRoot 'artifacts\test-logs'
         foreach ($k in $Overrides.Keys) { $s[$k] = $Overrides[$k] }
         return $s
     }
@@ -128,7 +129,7 @@ Describe 'Configuration and request' {
     }
 
     It 'lists unknown sections, unknown keys and invalid values together' {
-        $path = Join-Path $script:Root 'artifacts\bad.config.psd1'
+        $path = Join-Path $script:RepoRoot 'artifacts\bad.config.psd1'
         [void][IO.Directory]::CreateDirectory((Split-Path $path))
         "@{ Tenant = @{ TenantId = 'not a tenant' }; Search = @{ SearchIn = @('Rooms', 'Nowhere'); Futur = 1 }; Extra = @{}; Graph = @{ MaxConcurrency = 99 }; Report = @{ CsvDelimiter = '|' } }" | Set-Content $path
         $text = ({ Import-MclConfiguration -Path $path } | Should -Throw -PassThru).Exception.Message
@@ -175,7 +176,7 @@ Describe 'Configuration and request' {
     }
 
     It 'reads a text file or a CSV file of addresses' {
-        $dir = Join-Path $script:Root 'artifacts'; [void][IO.Directory]::CreateDirectory($dir)
+        $dir = Join-Path $script:RepoRoot 'artifacts'; [void][IO.Directory]::CreateDirectory($dir)
         $txt = Join-Path $dir 'mailboxes.txt'; "# list`r`nA@contoso.test`r`n`r`nb@contoso.test ; comment" | Set-Content $txt
         $csv = Join-Path $dir 'mailboxes.csv'; "DisplayName;PrimarySmtpAddress`r`nA;a@contoso.test`r`nC;c@contoso.test" | Set-Content $csv
         & $script:Module { param($p) Read-MclAddressFile $p } $txt | Should -Be @('A@contoso.test', 'b@contoso.test')
@@ -452,7 +453,7 @@ Describe 'List of organizers' {
     BeforeEach { New-TestTenant }
 
     It 'reads a text file and a CSV file of organizers, X500 addresses included' {
-        $dir = Join-Path $script:Root 'artifacts'; [void][IO.Directory]::CreateDirectory($dir)
+        $dir = Join-Path $script:RepoRoot 'artifacts'; [void][IO.Directory]::CreateDirectory($dir)
         $txt = Join-Path $dir 'organizers.txt'
         "# leavers`r`norg@contoso.test`r`n/o=ExchangeLabs/ou=Exchange Administrative Group (FYDIBOHF23SPDLT)/cn=Recipients/cn=0a1b-Gary Gone`r`nnot-an-address`r`n" | Set-Content $txt
         $csv = Join-Path $dir 'organizers.csv'
@@ -1329,7 +1330,7 @@ Describe 'Progress' {
 
 Describe 'Command line' {
     It 'stops with exit code 1 and the list of the problems on a wrong configuration' {
-        $path = Join-Path $script:Root 'artifacts\cli-bad.config.psd1'
+        $path = Join-Path $script:RepoRoot 'artifacts\cli-bad.config.psd1'
         "@{ Graph = @{ MaxConcurrency = 0 } }" | Set-Content $path
         $out = & pwsh -NoProfile -File (Join-Path $script:Root 'Invoke-MeetingCleanup.ps1') -ConfigPath $path -Organizer 'a@contoso.test' 2>&1
         $LASTEXITCODE | Should -Be 1
@@ -1338,8 +1339,8 @@ Describe 'Command line' {
     }
 
     It 'refuses to run without an organizer' {
-        $path = Join-Path $script:Root 'artifacts\cli-ok.config.psd1'
-        "@{ Logging = @{ Path = '$((Join-Path $script:Root 'artifacts\test-logs'))' } }" | Set-Content $path
+        $path = Join-Path $script:RepoRoot 'artifacts\cli-ok.config.psd1'
+        "@{ Logging = @{ Path = '$((Join-Path $script:RepoRoot 'artifacts\test-logs'))' } }" | Set-Content $path
         $out = & pwsh -NoProfile -File (Join-Path $script:Root 'Invoke-MeetingCleanup.ps1') -ConfigPath $path 2>&1
         $LASTEXITCODE | Should -Be 1
         ($out -join ' ') | Should -Match 'Give the organizer'

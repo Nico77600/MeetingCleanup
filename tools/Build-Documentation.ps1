@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Builds the HTML guides (docs\MeetingCleanup-UserGuide.html, docs\MeetingCleanup-Guide.html) from their
+    Builds the HTML guides (package\docs\MeetingCleanup-UserGuide.html, package\docs\MeetingCleanup-Guide.html) from their
     Markdown source.
 
 .DESCRIPTION
@@ -29,7 +29,7 @@
     in the HTML page it points to the HTML file of that guide and to the id of the same heading.
 
 .PARAMETER Source
-    Markdown guide to build. Default: both guides of docs\.
+    Markdown guide to build. Default: both guides of package\docs\.
 
 .PARAMETER Destination
     HTML file to write. Default: the Markdown file name with the .html extension.
@@ -49,7 +49,7 @@ param(
 $ErrorActionPreference = 'Stop'
 if (-not $Source) {
     foreach ($name in 'MeetingCleanup-UserGuide', 'MeetingCleanup-Guide') {
-        & $PSCommandPath -Source (Join-Path $PSScriptRoot "..\docs\$name.md")
+        & $PSCommandPath -Source (Join-Path $PSScriptRoot "..\package\docs\$name.md")
     }
     return
 }

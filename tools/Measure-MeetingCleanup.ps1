@@ -34,7 +34,8 @@
 param([int]$Meetings = 600, [int]$Attendees = 5, [switch]$Search, [switch]$Gui)
 
 $ErrorActionPreference = 'Stop'
-$root = Split-Path $PSScriptRoot -Parent
+$repoRoot = Split-Path $PSScriptRoot -Parent
+$root = Join-Path $repoRoot 'package'
 if ($Gui -and [Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') { throw 'The window needs an STA thread: pwsh -STA -File .\tools\Measure-MeetingCleanup.ps1 -Gui' }
 $load = [Diagnostics.Stopwatch]::StartNew()
 Import-Module (Join-Path $root 'MeetingCleanup.psd1') -Force
@@ -132,7 +133,7 @@ $times = & $module {
     }
     Remove-Item $settings.OutputPath -Recurse -Force -ErrorAction SilentlyContinue
     $rows
-} $Meetings $Attendees ([bool]$Search) ([bool]$Gui) (Join-Path $root 'tests\MeetingCleanup.FakeGraph.ps1') ([Math]::Round($load.Elapsed.TotalMilliseconds))
+} $Meetings $Attendees ([bool]$Search) ([bool]$Gui) (Join-Path $repoRoot 'tests\MeetingCleanup.FakeGraph.ps1') ([Math]::Round($load.Elapsed.TotalMilliseconds))
 
 Write-Host ("Meeting Cleanup {0} - {1} meetings x {2} attendees - PowerShell {3}" -f (Get-Module MeetingCleanup).Version, $Meetings, $Attendees, $PSVersionTable.PSVersion)
 $times | ForEach-Object { '  {0,-58} {1,9:N0} ms' -f $_.Step, $_.Ms } | Write-Host

@@ -16,7 +16,7 @@
     of the package and that the module loads from it.
 
 .PARAMETER Destination
-    Package folder. Default: package\MeetingCleanup-<version>, next to the tool folder.
+    Package folder. Default: package\MeetingCleanup-<version>, next to the repository folder.
 
 .PARAMETER Force
     Replace the destination folder if it already contains a package. A folder that contains reports\ or
@@ -38,13 +38,14 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$root = Split-Path $PSScriptRoot -Parent
+$repoRoot = Split-Path $PSScriptRoot -Parent
+$root = Join-Path $repoRoot 'package'
 $version = (Import-PowerShellDataFile -LiteralPath (Join-Path $root 'MeetingCleanup.psd1')).ModuleVersion
-if (-not $Destination) { $Destination = Join-Path (Split-Path $root -Parent) "package\MeetingCleanup-$version" }
+if (-not $Destination) { $Destination = Join-Path (Split-Path $repoRoot -Parent) "package\MeetingCleanup-$version" }
 $Destination = [IO.Path]::GetFullPath($Destination, (Get-Location).Path).TrimEnd('\')
-$rootPrefix = [IO.Path]::GetFullPath($root).TrimEnd('\') + '\'
+$rootPrefix = [IO.Path]::GetFullPath($repoRoot).TrimEnd('\') + '\'
 if (($Destination + '\').StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase) -or $rootPrefix.StartsWith($Destination + '\', [StringComparison]::OrdinalIgnoreCase)) {
-    throw "The destination must be outside the tool folder: $Destination"
+    throw "The destination must be outside the repository folder: $Destination"
 }
 if (Test-Path -LiteralPath $Destination) {
     if (-not $Force) { throw "The destination already exists: $Destination. Use -Force to replace it." }
@@ -64,7 +65,8 @@ foreach ($f in 'Invoke-MeetingCleanup.ps1', 'MeetingCleanup.psd1', 'MeetingClean
     'config\MeetingCleanup.config.psd1', 'templates\Report.template.html', 'docs\MeetingCleanup-UserGuide.html', 'docs\MeetingCleanup-Guide.html') { $files.Add($f) }
 Get-ChildItem -LiteralPath (Join-Path $root 'src') -File | Where-Object Extension -in '.ps1', '.cs' | ForEach-Object { $files.Add("src\$($_.Name)") }
 foreach ($f in $files) {
-    $source = Join-Path $root $f
+    $sourceRoot = if ($f -eq 'CHANGELOG.md') { $repoRoot } else { $root }
+    $source = Join-Path $sourceRoot $f
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing file in the tool folder: $f" }
     $target = Join-Path $Destination $f
     [void][IO.Directory]::CreateDirectory((Split-Path $target -Parent))

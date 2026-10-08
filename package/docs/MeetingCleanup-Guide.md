@@ -574,8 +574,8 @@ pwsh -STA -File .\tools\Measure-MeetingCleanup.ps1 -Meetings 2000 -Search -Gui
 
 | Guide | Source | For |
 |---|---|---|
-| **User guide** | `docs\MeetingCleanup-UserGuide.md` | The people who run the tool: prerequisites and everyday commands only. |
-| **Developer guide** | `docs\MeetingCleanup-Guide.md` (this guide) | Everything else: how it works, rights, configuration, window, report, architecture, tests. |
+| **User guide** | `package\docs\MeetingCleanup-UserGuide.md` | The people who run the tool: prerequisites and everyday commands only. |
+| **Developer guide** | `package\docs\MeetingCleanup-Guide.md` (this guide) | Everything else: how it works, rights, configuration, window, report, architecture, tests. |
 
 A link from one guide to the other is written with its GitHub anchor (`MeetingCleanup-Guide.md#5-application`): GitHub follows it, and the HTML build points it to the HTML file of the other guide.
 
@@ -583,7 +583,7 @@ A link from one guide to the other is written with its GitHub anchor (`MeetingCl
 .\tools\New-DocumentationImages.ps1     # window and report images, from fictitious data
 .\tools\Build-Documentation.ps1         # both guides in HTML (self-contained, light and dark)
 .\tools\New-ReadmeImages.ps1            # the graphics of the GitHub page (light and dark), after the HTML guides
-.\tools\New-MeetingCleanupPackage.ps1   # package: run-time files and both HTML guides only
+.\tools\New-MeetingCleanupPackage.ps1   # package: run-time files from package\ and both HTML guides only
 .\tools\Measure-MeetingCleanup.ps1      # time of the steps on a large synthetic volume (chapter 13)
 ```
 

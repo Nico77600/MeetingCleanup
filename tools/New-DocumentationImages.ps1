@@ -8,7 +8,7 @@
     (tests\MeetingCleanup.FakeGraph.ps1), loaded inside the module, with contoso.com names. The window is
     rendered off screen (RenderTargetBitmap); the report is opened by Microsoft Edge headless.
 
-    Writes docs\images\gui-search-light.png, gui-search-dark.png, gui-progress-light.png, gui-done-light.png, gui-restore-light.png,
+    Writes package\docs\images\gui-search-light.png, gui-search-dark.png, gui-progress-light.png, gui-done-light.png, gui-restore-light.png,
     gui-rooms-light.png, gui-occurrences-light.png, gui-transfer-light.png, report-overview.png, report-dark.png, report-transfers.png. Needs an interactive session (WPF) and Microsoft Edge.
 
 .NOTES
@@ -17,10 +17,11 @@
 #>
 #Requires -Version 7.4
 [CmdletBinding()]
-param([string]$Destination = (Join-Path $PSScriptRoot '..\docs\images'))
+param([string]$Destination = (Join-Path $PSScriptRoot '..\package\docs\images'))
 
 $ErrorActionPreference = 'Stop'
-$root = Split-Path $PSScriptRoot -Parent
+$repoRoot = Split-Path $PSScriptRoot -Parent
+$root = Join-Path $repoRoot 'package'
 $Destination = [IO.Path]::GetFullPath($Destination)
 [void][IO.Directory]::CreateDirectory($Destination)
 # The reports of the images go where a real installation would put them (the path shows in the window),
@@ -28,10 +29,10 @@ $Destination = [IO.Path]::GetFullPath($Destination)
 $neutral = Join-Path $env:SystemDrive 'Tools\MeetingCleanup'
 $ownNeutral = -not (Test-Path -LiteralPath $neutral)
 $ownParent = -not (Test-Path -LiteralPath (Split-Path $neutral -Parent))
-$work = if ($ownNeutral) { Join-Path $neutral 'reports' } else { Join-Path $root 'artifacts\doc-images' }
+$work = if ($ownNeutral) { Join-Path $neutral 'reports' } else { Join-Path $repoRoot 'artifacts\doc-images' }
 if (-not $ownNeutral -and (Test-Path $work)) { Remove-Item $work -Recurse -Force }
 try { [void][IO.Directory]::CreateDirectory($work) }
-catch { $ownNeutral = $false; $work = Join-Path $root 'artifacts\doc-images'; if (Test-Path $work) { Remove-Item $work -Recurse -Force }; [void][IO.Directory]::CreateDirectory($work) }
+catch { $ownNeutral = $false; $work = Join-Path $repoRoot 'artifacts\doc-images'; if (Test-Path $work) { Remove-Item $work -Recurse -Force }; [void][IO.Directory]::CreateDirectory($work) }
 # The neutral folder goes at the end, after a failure too (left behind, the next run would write under artifacts\).
 $cleanup = {
     if ($ownNeutral) {
@@ -220,7 +221,7 @@ $module = Get-Module MeetingCleanup
     $transferFolder = $script:Gui.LastFolder
     $transfer.Form.Close()
     [pscustomobject]@{ Report = (Join-Path $reportFolder 'MeetingCleanup.html'); Done = (Join-Path $doneFolder 'MeetingCleanup.html'); Transfer = (Join-Path $transferFolder 'MeetingCleanup.html') }
-} (Join-Path $root 'tests\MeetingCleanup.FakeGraph.ps1') $Destination $work | Set-Variable reports
+} (Join-Path $repoRoot 'tests\MeetingCleanup.FakeGraph.ps1') $Destination $work | Set-Variable reports
 
 # ---- the HTML report, opened by Microsoft Edge headless ------------------------------------------------
 $edge = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
