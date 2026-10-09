@@ -1,0 +1,10 @@
+{
+  "runtimeRoot": "package",
+  "testMode": "runner",
+  "testEntry": "Run-Tests.ps1",
+  "tests": [
+    "tests/MeetingCleanup.Tests.ps1"
+  ],
+  "packageBuilder": "tools/New-MeetingCleanupPackage.ps1",
+  "packageEntry": "Invoke-MeetingCleanup.ps1"
+}
