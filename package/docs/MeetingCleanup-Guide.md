@@ -334,6 +334,8 @@ Nothing executable is loaded without the manifest covering it: the C# source is 
 
 Only the configuration file and the `reports\` and `logs\` folders may change inside a verified package; keep lists of addresses, exported certificates and other files of your own in a folder outside it (for example `C:\Tools\MeetingCleanup-data`).
 
+The generated folders `reports\` and `logs\` are not hashed, but the verifier first checks that they are not reparse points: a junction or symbolic link in their place is refused. This is intended (the verifier of Exchange Log Report skips its generated folders without that check).
+
 The owner builds a release in three phases (the signing key is never read by the tool):
 
 ```powershell

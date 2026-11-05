@@ -145,6 +145,17 @@ Describe 'Signed manifest and verifier' {
             finally { (Get-Item -LiteralPath $link -Force).Delete() }
         }
     }
+    It 'rejects a junction in place of a generated folder' {
+        $outside = Join-Path $script:Work 'junction-generated'
+        [void][IO.Directory]::CreateDirectory($outside)
+        foreach ($name in 'reports', 'logs') {
+            Reset-Fixture
+            $link = Join-Path $script:Fixture $name
+            New-Item -ItemType Junction -Path $link -Target $outside | Out-Null
+            try { { Invoke-Guard } | Should -Throw -ExpectedMessage '*reparse point*' -Because $name }
+            finally { (Get-Item -LiteralPath $link -Force).Delete() }
+        }
+    }
     It 'rejects an absent manifest and a manifest of the wrong shape' {
         Remove-Item -LiteralPath (Join-Path $script:Fixture 'PackageIntegrity.psd1')
         { Invoke-Guard } | Should -Throw -ExpectedMessage '*PackageIntegrity.psd1 is missing*releases/latest*'
