@@ -144,7 +144,7 @@ Then in Entra: your application > *Certificates & secrets* > *Certificates* > *U
 
 ### 1.4 Fill in the configuration
 
-**Do:** open the configuration and enter four values:
+**Do:** open the configuration and enter three values (and a fourth, optional one):
 
 ```powershell
 notepad .\config\MeetingCleanup.config.psd1
@@ -153,13 +153,13 @@ notepad .\config\MeetingCleanup.config.psd1
 | Setting | Value |
 |---|---|
 | `Tenant.TenantId` | The *Directory (tenant) ID* from step 1.2. |
-| `Tenant.Organization` | Your initial domain, for example `contoso.onmicrosoft.com`. |
+| `Tenant.Organization` | Optional (needed for *Restore*): your initial domain, for example `contoso.onmicrosoft.com`. |
 | `Authentication.AppId` | The *Application (client) ID* from step 1.2. |
 | `Authentication.CertificateThumbprint` | The thumbprint from step 1.3. |
 
-**You should see:** the file saved with the four values between quotes.
+**You should see:** the file saved with the values between quotes.
 
-**If not:** the first run says *Invalid value* and names the setting to correct.
+**If not:** the first run says *Invalid configuration (<path>)* or *Connection settings:* followed by the setting to correct, for example *Tenant.TenantId is required.*
 
 ### 1.5 First run: a report
 
@@ -210,6 +210,10 @@ Open the HTML report: the **Meetings** tab lists each meeting (a series once), c
 ### 2.2 A person has left, the mailbox is kept: cancel the meetings
 
 ```powershell
+# 1. Report: nothing is changed
+.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com
+
+# 2. The same command with the action (a cancellation is sent to every attendee and cannot be undone)
 .\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Action Cancel -Comment 'Megan Bowen has left: this meeting is cancelled.'
 ```
 
@@ -230,6 +234,10 @@ Use the address of the person (any of its aliases), or its X500 address when the
 ### 2.4 Give the meetings of a person to someone else
 
 ```powershell
+# 1. Report: nothing is changed
+.\Invoke-MeetingCleanup.ps1 -Organizer john.doe@contoso.com -SearchIn Rooms, AllMailboxes
+
+# 2. The same command with the action (it changes real calendars and sends an invitation from the new organizer)
 .\Invoke-MeetingCleanup.ps1 -Organizer john.doe@contoso.com -SearchIn Rooms, AllMailboxes -Action Transfer -NewOrganizer jane.roe@contoso.com
 ```
 
@@ -238,6 +246,10 @@ Jane becomes the organizer of every meeting still to come. When John is still ac
 ### 2.5 One meeting, or one series, without a message
 
 ```powershell
+# 1. Report: nothing is changed
+.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Subject 'Weekly sales review'
+
+# 2. The same command with the action (the copies are removed silently; Restore can bring them back for 14 days)
 .\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Subject 'Weekly sales review' -Action Remove
 ```
 
@@ -246,7 +258,11 @@ The copies of the attendees and the rooms are removed, nobody receives anything;
 ### 2.6 One occurrence of a series
 
 ```powershell
-# Not this Monday: the occurrence of 16 November only, cancelled for everyone
+# 1. Report: nothing is changed
+.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Subject 'Weekly sales review' -SeriesScope Occurrences `
+    -Start 2026-11-16 -End 2026-11-16
+
+# 2. Not this Monday: the occurrence of 16 November only, cancelled for everyone (a cancellation cannot be undone)
 .\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Subject 'Weekly sales review' -SeriesScope Occurrences `
     -Start 2026-11-16 -End 2026-11-16 -Action Cancel -Comment 'No sales review this Monday.'
 ```
@@ -255,6 +271,10 @@ With `-SeriesScope Occurrences`, a series is limited to its occurrences in the p
 ### 2.7 Rooms closed for works
 
 ```powershell
+# 1. Report: nothing is changed
+.\Invoke-MeetingCleanup.ps1 -Room room-paris-01@contoso.com, room-paris-02@contoso.com -Start 2026-11-02 -End 2026-11-13
+
+# 2. The same command with the action (a cancellation is sent to every attendee and cannot be undone)
 .\Invoke-MeetingCleanup.ps1 -Room room-paris-01@contoso.com, room-paris-02@contoso.com -Start 2026-11-02 -End 2026-11-13 `
     -Action Cancel -Comment 'The rooms of the 1st floor are closed for works.'
 ```
@@ -352,7 +372,7 @@ Each run writes a new folder under `reports\`, named after the action and the ti
 | *Package integrity: unexpected stable file: ...* | A file of your own is in the tool folder (a list, a certificate, a copy of the configuration). Move it out, for example to `C:\Tools\MeetingCleanup-data\`, and give its full path to the tool. |
 | *Package integrity: SHA256 mismatch* · *missing inventory path* · *expected trusted, timestamped owner signature* | A file of the package is changed or missing, or the download is not the published one. Download the ZIP again from the Releases page, extract it and unblock it. |
 | `AADSTS700016` · `AADSTS700027` | Application ID not in the tenant · certificate not uploaded to the application, or another one. |
-| *Certificate ... not found* | Import the `.pfx` (not the `.cer`) for the account that runs the tool, in `Cert:\CurrentUser\My` or `LocalMachine\My`. |
+| *Certificate ... not found* | The certificate is not in the store of the account that runs the tool. Create it again as in 1.3, under that account, on the computer that runs the tool, and upload the new `.cer` to the application. |
 | *no application permission Calendars.ReadWrite* | Permission missing, or admin consent not granted (`Calendars.ReadWrite.All` counts as well). |
 | A mailbox *could not be read: access denied* | The application is limited to some mailboxes (RBAC for Applications, access policy). |
 | *Confirmation needed: run interactively, or add -Force* | An action without a console (scheduled task): add `-Force`. |

@@ -324,7 +324,7 @@ A release package carries three layers, all checked before any of the tool is lo
 
 | Layer | What it protects |
 |---|---|
-| Authenticode signature | The 14 PowerShell files (`Invoke-MeetingCleanup.ps1`, `MeetingCleanup.psm1`, `MeetingCleanup.psd1`, `src\Test-PackageIntegrity.ps1` and the nine `src\MeetingCleanup.*.ps1`), signed by the owner (thumbprint `0F28E442889F17B5F4D251E8F96E7CC6E2C9C6D6`) with an RFC 3161 timestamp. |
+| Authenticode signature | The 13 PowerShell files (`Invoke-MeetingCleanup.ps1`, `MeetingCleanup.psm1`, `MeetingCleanup.psd1`, `src\Test-PackageIntegrity.ps1` and the nine `src\MeetingCleanup.*.ps1`), signed by the owner (thumbprint `0F28E442889F17B5F4D251E8F96E7CC6E2C9C6D6`) with an RFC 3161 timestamp. |
 | `PackageIntegrity.psd1` | A list of the SHA256 of every other shipped file (C# source, report template, HTML guides, README, LICENSE, notices, CHANGELOG) and of the signed scripts. It is signed and timestamped too. |
 | `src\Test-PackageIntegrity.ps1` | The verifier. It refuses an unsigned or untimestamped manifest, another signer, a SHA256 that differs, a missing file, an unlisted file and a reparse point (junction or symbolic link). `config\MeetingCleanup.config.psd1` (edited by the administrator) and the `reports\` and `logs\` folders are not covered. |
 
@@ -339,7 +339,7 @@ The generated folders `reports\` and `logs\` are not hashed, but the verifier fi
 The owner builds a release in three phases (the signing key is never read by the tool):
 
 ```powershell
-# 1. Sign the 14 PowerShell files (RFC 3161 timestamp http://ts.ssl.com), then build from the signed sources
+# 1. Sign the 13 PowerShell files (RFC 3161 timestamp http://ts.ssl.com), then build from the signed sources
 .\tools\New-MeetingCleanupPackage.ps1 -Destination C:\work\build\MeetingCleanup-1.3.1
 # 2. Write the unsigned manifest in the built folder, sign it, copy it to package\PackageIntegrity.psd1
 .\tools\New-MeetingCleanupPackage.ps1 -Manifest C:\work\build\MeetingCleanup-1.3.1

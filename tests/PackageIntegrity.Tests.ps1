@@ -189,12 +189,12 @@ Describe 'Signed manifest and verifier' {
 
 Describe 'Integrity at the entry points' {
     BeforeEach { Reset-Fixture }
-    It 'refuses to start from a changed package, before the module is loaded' {
+    It 'refuses to start from a package whose verifier is not owner-signed, before the module is loaded' {
         foreach ($relative in 'src\MeetingCleanup.Native.cs', 'src\Test-PackageIntegrity.ps1', 'MeetingCleanup.psm1') {
             Reset-Fixture
             Edit-Protected (Join-Path $script:Fixture $relative)
             $run = Invoke-Child ("& '$(Join-Path $script:Fixture 'Invoke-MeetingCleanup.ps1')' -Organizer a@contoso.test; 'EXIT=' + `$LASTEXITCODE")
-            $run.Text | Should -Match 'Package integrity' -Because $relative
+            $run.Text | Should -Match 'Package integrity: verifier must have the trusted, timestamped owner signature' -Because $relative
             $run.Text | Should -Not -Match 'EXIT=0'
             Test-Path -LiteralPath (Join-Path $script:Fixture 'reports') | Should -BeFalse
             Test-Path -LiteralPath (Join-Path $script:Fixture 'logs') | Should -BeFalse
@@ -338,6 +338,19 @@ Describe 'Package builder and source archive' {
         foreach ($name in 'Unsigned', 'Manifest', 'Seal') { $builder | Should -Match "\[Parameter\(ParameterSetName = '\w+'(, Mandatory)?\)\]\[\w+\]\`$$name" }
         $builder | Should -Match "if \(-not \`$Unsigned\) \{ foreach \(\`$relative in \`$signedScripts\) \{ Assert-OwnerSigned"
         $builder | Should -Match 'MeetingCleanup-\$version/'
+    }
+    It 'builds an unsigned package, and -Seal refuses a built folder that has been run, without writing a ZIP' {
+        # The builder refuses a destination inside the repository: use the temporary folder.
+        $built = Join-Path ([IO.Path]::GetTempPath()) ('mcl-seal-' + [guid]::NewGuid().ToString('N'))
+        $builder = Join-Path $script:RepoRoot 'tools\New-MeetingCleanupPackage.ps1'
+        $build = Invoke-Child ("& '$builder' -Destination '$built' -Unsigned *>&1 | Out-String; 'EXIT=' + `$LASTEXITCODE")
+        $build.Text | Should -Match 'package ready'
+        Test-Path -LiteralPath "$built-unsigned-ci.zip" | Should -BeTrue
+        [void][IO.Directory]::CreateDirectory((Join-Path $built 'reports'))
+        $seal = Invoke-Child ("& '$builder' -Seal '$built' *>&1 | Out-String")
+        $seal.Text | Should -Match 'contains a reports folder'
+        Test-Path -LiteralPath "$built.zip" | Should -BeFalse
+        Remove-Item -LiteralPath $built, "$built-unsigned-ci.zip" -Recurse -Force -ErrorAction SilentlyContinue
     }
     It 'keeps the packaged README to files the package holds' {
         $readme = [IO.File]::ReadAllText((Join-Path $script:Source 'README.md'))

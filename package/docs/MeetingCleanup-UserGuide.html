@@ -320,7 +320,7 @@ $cert.Thumbprint                                                   # copy it: th
 <p><strong>You should see:</strong> the thumbprint printed in PowerShell (40 characters), and the same thumbprint in the list of certificates of the application.</p>
 <p><strong>If not:</strong> the two thumbprints differ: you uploaded another certificate. Remove it and upload <code>MeetingCleanup.cer</code>. The private key stays on this computer and is not exportable: run the tool as the same account and the same computer.</p>
 <h3 id="fill-in-the-configuration">1.4 Fill in the configuration</h3>
-<p><strong>Do:</strong> open the configuration and enter four values:</p>
+<p><strong>Do:</strong> open the configuration and enter three values (and a fourth, optional one):</p>
 <div class="code"><div class="code-head"><span>PowerShell</span><button type="button" class="copy"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg><span>Copy</span></button></div><pre><code>notepad .\config\MeetingCleanup.config.psd1
 </code></pre></div>
 <div class="table-wrap"><table>
@@ -337,7 +337,7 @@ $cert.Thumbprint                                                   # copy it: th
 </tr>
 <tr>
 <td><code>Tenant.Organization</code></td>
-<td>Your initial domain, for example <code>contoso.onmicrosoft.com</code>.</td>
+<td>Optional (needed for <em>Restore</em>): your initial domain, for example <code>contoso.onmicrosoft.com</code>.</td>
 </tr>
 <tr>
 <td><code>Authentication.AppId</code></td>
@@ -349,8 +349,8 @@ $cert.Thumbprint                                                   # copy it: th
 </tr>
 </tbody>
 </table></div>
-<p><strong>You should see:</strong> the file saved with the four values between quotes.</p>
-<p><strong>If not:</strong> the first run says <em>Invalid value</em> and names the setting to correct.</p>
+<p><strong>You should see:</strong> the file saved with the values between quotes.</p>
+<p><strong>If not:</strong> the first run says <em>Invalid configuration (<path>)</em> or <em>Connection settings:</em> followed by the setting to correct, for example <em>Tenant.TenantId is required.</em></p>
 <h3 id="first-run-a-report">1.5 First run: a report</h3>
 <p><strong>Do:</strong> run a report on your own address. A report changes nothing.</p>
 <div class="code"><div class="code-head"><span>PowerShell</span><button type="button" class="copy"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg><span>Copy</span></button></div><pre><code>.\Invoke-MeetingCleanup.ps1 -Organizer jane.roe@contoso.com
@@ -383,7 +383,11 @@ $cert.Thumbprint                                                   # copy it: th
 </code></pre></div>
 <p>Open the HTML report: the <strong>Meetings</strong> tab lists each meeting (a series once), click one for its copies — who has it, which rooms, how it was found.</p>
 <h3 id="a-person-has-left-the-mailbox-is-kept-cancel-the-meetings">2.2 A person has left, the mailbox is kept: cancel the meetings</h3>
-<div class="code"><div class="code-head"><span>PowerShell</span><button type="button" class="copy"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg><span>Copy</span></button></div><pre><code>.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Action Cancel -Comment 'Megan Bowen has left: this meeting is cancelled.'
+<div class="code"><div class="code-head"><span>PowerShell</span><button type="button" class="copy"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg><span>Copy</span></button></div><pre><code># 1. Report: nothing is changed
+.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com
+
+# 2. The same command with the action (a cancellation is sent to every attendee and cannot be undone)
+.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Action Cancel -Comment 'Megan Bowen has left: this meeting is cancelled.'
 </code></pre></div>
 <p>Each meeting is cancelled by its organizer, with your message: the attendees receive the cancellation, the rooms are free again, the copies left are removed.</p>
 <h3 id="a-person-has-left-the-mailbox-is-deleted">2.3 A person has left, the mailbox is deleted</h3>
@@ -395,21 +399,37 @@ $cert.Thumbprint                                                   # copy it: th
 </code></pre></div>
 <p>Use the address of the person (any of its aliases), or its X500 address when the account is gone from the directory. A deleted organizer cannot cancel: the copies are removed silently. <em>Every mailbox</em> can take a while on a large tenant; with a list of the team instead: <code>-SearchIn Mailboxes -MailboxFile C:\Tools\MeetingCleanup-data\team.txt</code>.</p>
 <h3 id="give-the-meetings-of-a-person-to-someone-else">2.4 Give the meetings of a person to someone else</h3>
-<div class="code"><div class="code-head"><span>PowerShell</span><button type="button" class="copy"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg><span>Copy</span></button></div><pre><code>.\Invoke-MeetingCleanup.ps1 -Organizer john.doe@contoso.com -SearchIn Rooms, AllMailboxes -Action Transfer -NewOrganizer jane.roe@contoso.com
+<div class="code"><div class="code-head"><span>PowerShell</span><button type="button" class="copy"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg><span>Copy</span></button></div><pre><code># 1. Report: nothing is changed
+.\Invoke-MeetingCleanup.ps1 -Organizer john.doe@contoso.com -SearchIn Rooms, AllMailboxes
+
+# 2. The same command with the action (it changes real calendars and sends an invitation from the new organizer)
+.\Invoke-MeetingCleanup.ps1 -Organizer john.doe@contoso.com -SearchIn Rooms, AllMailboxes -Action Transfer -NewOrganizer jane.roe@contoso.com
 </code></pre></div>
 <p>Jane becomes the organizer of every meeting still to come. When John is still active, Exchange Online moves each meeting (the attendees see nothing); when his account or mailbox is gone, the meeting is re-created by Jane and the attendees receive <strong>one invitation</strong>. The report opens on its <strong>Transfers</strong> tab: for each meeting, from whom to whom, how, the new meeting and its invitation, what became of the old one. How each way works and its rights: <a href="MeetingCleanup-Guide.html#transfer-to-a-new-organizer">developer guide, Transfer to a new organizer</a>.</p>
 <h3 id="one-meeting-or-one-series-without-a-message">2.5 One meeting, or one series, without a message</h3>
-<div class="code"><div class="code-head"><span>PowerShell</span><button type="button" class="copy"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg><span>Copy</span></button></div><pre><code>.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Subject 'Weekly sales review' -Action Remove
+<div class="code"><div class="code-head"><span>PowerShell</span><button type="button" class="copy"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg><span>Copy</span></button></div><pre><code># 1. Report: nothing is changed
+.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Subject 'Weekly sales review'
+
+# 2. The same command with the action (the copies are removed silently; Restore can bring them back for 14 days)
+.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Subject 'Weekly sales review' -Action Remove
 </code></pre></div>
 <p>The copies of the attendees and the rooms are removed, nobody receives anything; a series goes whole. The organizer's own meeting stays (<em>Kept</em>): removing it would send a cancellation — choose <em>Cancel</em> for that.</p>
 <h3 id="one-occurrence-of-a-series">2.6 One occurrence of a series</h3>
-<div class="code"><div class="code-head"><span>PowerShell</span><button type="button" class="copy"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg><span>Copy</span></button></div><pre><code># Not this Monday: the occurrence of 16 November only, cancelled for everyone
+<div class="code"><div class="code-head"><span>PowerShell</span><button type="button" class="copy"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg><span>Copy</span></button></div><pre><code># 1. Report: nothing is changed
+.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Subject 'Weekly sales review' -SeriesScope Occurrences `
+    -Start 2026-11-16 -End 2026-11-16
+
+# 2. Not this Monday: the occurrence of 16 November only, cancelled for everyone (a cancellation cannot be undone)
 .\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Subject 'Weekly sales review' -SeriesScope Occurrences `
     -Start 2026-11-16 -End 2026-11-16 -Action Cancel -Comment 'No sales review this Monday.'
 </code></pre></div>
 <p>With <code>-SeriesScope Occurrences</code>, a series is limited to its occurrences in the period: <em>Cancel</em> sends one cancellation for that date only, <em>Remove</em> takes the occurrence out of the attendees' and rooms' calendars without a message (the organizer keeps it). The series goes on. In the window: tick <em>Series: only the occurrences of the period</em>, search, select the series, then <strong>Occurrences...</strong> to tick the ones to act on (2.10). An occurrence removed cannot be restored.</p>
 <h3 id="rooms-closed-for-works">2.7 Rooms closed for works</h3>
-<div class="code"><div class="code-head"><span>PowerShell</span><button type="button" class="copy"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg><span>Copy</span></button></div><pre><code>.\Invoke-MeetingCleanup.ps1 -Room room-paris-01@contoso.com, room-paris-02@contoso.com -Start 2026-11-02 -End 2026-11-13 `
+<div class="code"><div class="code-head"><span>PowerShell</span><button type="button" class="copy"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg><span>Copy</span></button></div><pre><code># 1. Report: nothing is changed
+.\Invoke-MeetingCleanup.ps1 -Room room-paris-01@contoso.com, room-paris-02@contoso.com -Start 2026-11-02 -End 2026-11-13
+
+# 2. The same command with the action (a cancellation is sent to every attendee and cannot be undone)
+.\Invoke-MeetingCleanup.ps1 -Room room-paris-01@contoso.com, room-paris-02@contoso.com -Start 2026-11-02 -End 2026-11-13 `
     -Action Cancel -Comment 'The rooms of the 1st floor are closed for works.'
 </code></pre></div>
 <p>Every meeting of these rooms in the period, whoever organized it. A series loses only its occurrences in the period, and goes on after. The period is required with an action.</p>
@@ -630,7 +650,7 @@ $cert.Thumbprint                                                   # copy it: th
 </tr>
 <tr>
 <td><em>Certificate ... not found</em></td>
-<td>Import the <code>.pfx</code> (not the <code>.cer</code>) for the account that runs the tool, in <code>Cert:\CurrentUser\My</code> or <code>LocalMachine\My</code>.</td>
+<td>The certificate is not in the store of the account that runs the tool. Create it again as in 1.3, under that account, on the computer that runs the tool, and upload the new <code>.cer</code> to the application.</td>
 </tr>
 <tr>
 <td><em>no application permission Calendars.ReadWrite</em></td>

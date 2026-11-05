@@ -112,7 +112,7 @@ function Write-PackageZip([string]$Package, [string]$ZipPath) {
 }
 
 if ($PSCmdlet.ParameterSetName -eq 'Manifest') {
-    $Manifest = [IO.Path]::GetFullPath($Manifest).TrimEnd('\')
+    $Manifest = [IO.Path]::GetFullPath($Manifest, (Get-Location).Path).TrimEnd('\')
     foreach ($relative in $signedScripts) { Assert-OwnerSigned (Join-Path $Manifest $relative) }
     $path = Write-Manifest $Manifest
     Write-Output "Unsigned manifest written: $path"
@@ -121,7 +121,7 @@ if ($PSCmdlet.ParameterSetName -eq 'Manifest') {
 }
 
 if ($PSCmdlet.ParameterSetName -eq 'Seal') {
-    $Seal = [IO.Path]::GetFullPath($Seal).TrimEnd('\')
+    $Seal = [IO.Path]::GetFullPath($Seal, (Get-Location).Path).TrimEnd('\')
     foreach ($used in 'data', 'reports', 'logs', 'bin') {
         if (Test-Path -LiteralPath (Join-Path $Seal $used)) { throw "The built folder contains a $used folder (a package that has been run), it is not sealed: $Seal" }
     }

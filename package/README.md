@@ -51,6 +51,9 @@ If not: the user guide, chapter 4, explains the usual messages.
 
 **5. Then the same command with the action.** The tool shows exactly what it will do and asks you to type YES.
 
+> [!WARNING]
+> A cancellation is sent to every attendee and cannot be undone. Always read the report first.
+
 ```powershell
 .\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Action Cancel -Comment 'Megan has left the company.'
 ```

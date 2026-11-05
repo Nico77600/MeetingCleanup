@@ -15,5 +15,5 @@ $configuration.TestResult.OutputPath = Join-Path $PSScriptRoot 'artifacts\pester
 [void][IO.Directory]::CreateDirectory((Join-Path $PSScriptRoot 'artifacts'))
 $result = Invoke-Pester -Configuration $configuration
 if ($result.FailedCount -gt 0 -or $result.Result -ne 'Passed') {
-    throw "Tests en echec : $($result.FailedCount)."
+    throw "Tests failed: $($result.FailedCount)."
 }

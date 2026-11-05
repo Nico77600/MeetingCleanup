@@ -9,19 +9,15 @@ Signed and verified package, and a Get started that begins with the release ZIP.
 
 ### Added
 - The PowerShell files carry the owner's timestamped Authenticode signature.
-- `PackageIntegrity.psd1`, a signed list of the SHA256 of every shipped file: the tool checks it before anything loads and refuses a changed, added or missing file.
-- User guide: a "Check the download" box, and numbered steps for the application registration, its four permissions and the certificate.
-- Before it starts, the tool checks the signature and SHA256 of every file of the package and stops if one is changed, missing or added.
+- `PackageIntegrity.psd1`, a signed list of the SHA256 of every shipped file. Each start checks the signature and SHA256 of every file of the package and stops if one is changed, missing or added.
 - `-DevelopmentMode` starts an unsigned folder that has no manifest (a present manifest is always verified).
+- User guide: a "Check the download" box and numbered steps for the application registration, its four permissions and the certificate.
 
 ### Changed
-- Only `config\MeetingCleanup.config.psd1`, `reports\` and `logs\` may change inside the tool folder; keep your own files (lists, certificate export) outside it.
-- The C# helper is compiled in memory from the verified source at each start (a few seconds: 3.6 s measured for the whole module import on a busy computer); no compiled file is cached on disk.
+- Only `config\MeetingCleanup.config.psd1`, `reports\` and `logs\` may change inside the tool folder; keep your own files (lists, certificate export) in a folder outside it, for example `C:\Tools\MeetingCleanup-data`.
 - The release ZIP has one root folder, `MeetingCleanup-<version>\`, holds `PackageIntegrity.psd1`, LICENSE, CHANGELOG and THIRD-PARTY-NOTICES, and its README links only files it contains.
-- Get started begins with the release ZIP and gives the PowerShell version check, each step with what you should see.
-- First run: a report first (nothing is changed), then the same command with the action.
+- Get started begins with the release ZIP, gives the PowerShell version check and shows what you should see at each step; the first run is a report, then the same command with the action.
 - The run-time files are in the `package` folder of the repository; the source archive leaves out tests, tools and the Markdown guides.
-
 ## [1.3.0] — 2026-10-07
 
 ### Added
@@ -62,12 +58,14 @@ Signed and verified package, and a Get started that begins with the release ZIP.
 - Guide: the unblock note at the top and `Install-Module ... -Force`.
 - Reports of 1.0.0 and 1.1.0 can be read and restored.
 - A copy that cannot be read is reported *Not read*; *Cancel* leaves such a meeting as it is.
+- The console and the window count the copies by mailbox (occurrences once).
 
 ## [1.1.0] — 2026-10-06
 
 ### Added
 - List of organizers: `-OrganizerFile`, several lines in the window, *Load a list...*; an *Organizers* tab and file in the report.
-- Backup (`Backup.json`) before Remove or Cancel.
+- Backup (Backup.json) before Remove or Cancel.
+- Copies: columns *Organizer*, *ShowAs* and *ActionUtc* (time of each removal).
 - **Restore** (`-Action Restore -FromReport <Remove run>`, *Restore...* in the window): the copies removed come back from Recoverable Items, without a message.
 - Configuration section `Restore`.
 
@@ -76,6 +74,7 @@ Signed and verified package, and a Get started that begins with the release ZIP.
 - The *Copies* column of the window shows the rooms.
 - *Stop* during a removal keeps the copies already removed in the report.
 - A meeting of another organizer of the list is not taken as the first one's.
+- Remove removes the copies with the same subject in the same mailbox one after the other, 3 seconds apart, so that their order is certain for Restore.
 
 ## [1.0.0] — 2026-10-05
 
@@ -84,7 +83,8 @@ First version: one tool for the meetings of an organizer who left, present or de
 ### Added
 - One search for one meeting, a series or a period, in the organizer's calendar, the rooms, a list of mailboxes or every mailbox.
 - Every copy of a meeting is found: attendees, rooms and members of the groups invited.
-- **Remove** (silent) and **Cancel** (by the organizer, with your message); a report is the default and an action asks to type YES.
+- **Remove** (silent: the organizer's meeting is kept, removing it there always sends a cancellation) and **Cancel** (by the organizer, with your message); a report is the default and an action asks to type YES.
+- `-FromReport` replays a reviewed report by the IDs of its meetings.
 - Microsoft Graph application permissions with a certificate or a client secret.
 - A window (`-Gui`), CSV and JSON reports, a self-contained HTML report and a daily log.
 - User guide in Markdown and HTML.

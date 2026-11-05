@@ -133,16 +133,15 @@ You need PowerShell 7.4 or later: open it with `pwsh` and run `$PSVersionTable.P
 
 1. **Download** `MeetingCleanup-<version>.zip` from the [latest release](https://github.com/Nico77600/MeetingCleanup/releases/latest) (not the *Source code* archives) and extract it, for example to `C:\Tools\MeetingCleanup-1.3.1`.
 2. **Unblock the files** once (command at the top of this page).
-3. **Fill in the configuration**: `notepad .\config\MeetingCleanup.config.psd1` (tenant, application, certificate thumbprint).
+3. **Fill in the configuration**: `cd C:\Tools\MeetingCleanup-1.3.1`, then `notepad .\config\MeetingCleanup.config.psd1` (tenant ID, application ID, certificate thumbprint). Keep your own files (lists of addresses, certificate exports) outside the tool folder, for example in `C:\Tools\MeetingCleanup-data`: only the configuration file, `reports\` and `logs\` may change inside it.
 4. **First run: a report.** It changes nothing.
 
    ```powershell
-   cd C:\Tools\MeetingCleanup-1.3.1
    .\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com
    ```
 
    You should see the meetings found and a folder under `reports\` with `MeetingCleanup.html`: open it in a browser.
-5. **Then the same command with the action.** It shows what it will do and asks you to type YES.
+5. **Then the same command with the action.** It shows what it will do and asks you to type YES. A cancellation is sent to every attendee and cannot be undone.
 
    ```powershell
    .\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Action Cancel -Comment 'Megan has left the company.'
