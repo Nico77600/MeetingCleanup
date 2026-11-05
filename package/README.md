@@ -34,7 +34,7 @@ Get-ChildItem . -Recurse -File -Force | Unblock-File
 
 You should see: nothing, and no error.
 
-**3. Fill in the configuration.**
+**3. Fill in the configuration.** Keep your own files (lists of addresses, certificate exports) outside the tool folder, for example in `C:\Tools\MeetingCleanup-data`, and give their absolute path.
 
 Do: `notepad .\config\MeetingCleanup.config.psd1`, then enter your tenant ID, the application (client) ID and the certificate thumbprint.
 You should see: the same file, saved, with your three values.

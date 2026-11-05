@@ -17,7 +17,7 @@ Signed and verified package, and a Get started that begins with the release ZIP.
 ### Changed
 - Only `config\MeetingCleanup.config.psd1`, `reports\` and `logs\` may change inside the tool folder; keep your own files (lists, certificate export) outside it.
 - The C# helper is compiled in memory from the verified source at each start (a few seconds: 3.6 s measured for the whole module import on a busy computer); no compiled file is cached on disk.
-- The release ZIP has one root folder, `MeetingCleanup-<version>\`, and a README that links only files it contains.
+- The release ZIP has one root folder, `MeetingCleanup-<version>\`, holds `PackageIntegrity.psd1`, LICENSE, CHANGELOG and THIRD-PARTY-NOTICES, and its README links only files it contains.
 - Get started begins with the release ZIP and gives the PowerShell version check, each step with what you should see.
 - First run: a report first (nothing is changed), then the same command with the action.
 - The run-time files are in the `package` folder of the repository; the source archive leaves out tests, tools and the Markdown guides.

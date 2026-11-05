@@ -345,7 +345,7 @@ The owner builds a release in three phases (the signing key is never read by the
 .\tools\New-MeetingCleanupPackage.ps1 -Seal C:\work\build\MeetingCleanup-1.3.1
 ```
 
-The ZIP has one root folder, `MeetingCleanup-<version>\`. Continuous integration builds an unsigned package with `-Unsigned` (no ZIP is a release). Any change to a protected file after the manifest is signed needs a new manifest. To work from a clone, build a folder with `-Unsigned` and start it with `-DevelopmentMode`.
+The ZIP has one root folder, `MeetingCleanup-<version>\`. Continuous integration builds an unsigned package with `-Unsigned` (no ZIP is a release). Any change to a protected file after the manifest is signed needs a new manifest. To work from a clone, build a folder with `-Unsigned` and start it with `-DevelopmentMode`. A developer who edits a protected file after the signed manifest is committed deletes `package\PackageIntegrity.psd1` locally (never commits that deletion) and starts the tool with `-DevelopmentMode`; the file is restored with `git restore package\PackageIntegrity.psd1`. Paths of lists and credential files in the configuration are absolute and point to the data folder, for example `C:\Tools\MeetingCleanup-data\team.txt`.
 <!-- icon: settings -->
 ## 7. Configuration
 

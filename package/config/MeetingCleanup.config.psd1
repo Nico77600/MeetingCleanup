@@ -60,8 +60,8 @@
         FutureDays  = 365
         SeriesScope = 'Whole'   # 'Whole' or 'Occurrences'
         Rooms       = @()     # room addresses added to the places API (a new room may take time to appear there)
-        RoomFile    = ''      # file of room addresses
-        MailboxFile = ''      # default file of the 'Mailboxes' scope
+        RoomFile    = ''      # file of room addresses: an absolute path in your data folder, e.g. C:\Tools\MeetingCleanup-data\rooms.txt
+        MailboxFile = ''      # default file of the 'Mailboxes' scope: an absolute path in your data folder (C:\Tools\MeetingCleanup-data\team.txt)
     }
 
     # ---------------------------------------------------------------------
