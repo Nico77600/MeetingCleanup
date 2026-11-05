@@ -155,13 +155,13 @@ footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--cp-bor
   main { padding: 0; max-width: none; } .section { break-inside: avoid-page; box-shadow: none; } .part { break-before: page; }
 }
 </style></head><body>
-<aside><div class="brand"><div class="brand-logo"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></div><div><div class="brand-name">Meeting Cleanup</div><div class="brand-sub">Developer guide · v1.3.0</div></div></div>
+<aside><div class="brand"><div class="brand-logo"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></div><div><div class="brand-name">Meeting Cleanup</div><div class="brand-sub">Developer guide · v1.3.1</div></div></div>
 <nav aria-label="Contents"><a href="#quick-start" data-target="quick-start"><span class="nav-badge"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4z"/></svg></span><span class="nav-text">Quick start</span></a><div class="nav-part">Part I <span>Understand</span></div><a href="#purpose" data-target="purpose"><span class="nav-badge">1</span><span class="nav-text">Purpose</span></a><a href="#how-it-works" data-target="how-it-works"><span class="nav-badge">2</span><span class="nav-text">How it works</span></a><a href="#the-cases" data-target="the-cases"><span class="nav-badge">3</span><span class="nav-text">The cases</span></a><a href="#the-actions" data-target="the-actions"><span class="nav-badge">4</span><span class="nav-text">The actions</span></a><div class="nav-part">Part II <span>Set up</span></div><a href="#application" data-target="application"><span class="nav-badge">5</span><span class="nav-text">Application</span></a><a href="#installation" data-target="installation"><span class="nav-badge">6</span><span class="nav-text">Installation</span></a><a href="#configuration" data-target="configuration"><span class="nav-badge">7</span><span class="nav-text">Configuration</span></a><div class="nav-part">Part III <span>Use</span></div><a href="#command-line" data-target="command-line"><span class="nav-badge">8</span><span class="nav-text">Command line</span></a><a href="#window" data-target="window"><span class="nav-badge">9</span><span class="nav-text">Window</span></a><a href="#reading-the-report" data-target="reading-the-report"><span class="nav-badge">10</span><span class="nav-text">Reading the report</span></a><a href="#files-produced" data-target="files-produced"><span class="nav-badge">11</span><span class="nav-text">Files produced</span></a><div class="nav-part">Part IV <span>Maintain</span></div><a href="#architecture" data-target="architecture"><span class="nav-badge">12</span><span class="nav-text">Architecture</span></a><a href="#performance-and-limits" data-target="performance-and-limits"><span class="nav-badge">13</span><span class="nav-text">Performance and limits</span></a><a href="#tests" data-target="tests"><span class="nav-badge">14</span><span class="nav-text">Tests</span></a><a href="#documentation-and-package" data-target="documentation-and-package"><span class="nav-badge">15</span><span class="nav-text">Documentation and package</span></a><div class="nav-part">Appendices</div><a href="#appendix-a-troubleshooting" data-target="appendix-a-troubleshooting"><span class="nav-badge">A</span><span class="nav-text">Troubleshooting</span></a><a href="#appendix-b-security-and-recovery" data-target="appendix-b-security-and-recovery"><span class="nav-badge">B</span><span class="nav-text">Security and recovery</span></a><a href="#appendix-c-lab-measurements" data-target="appendix-c-lab-measurements"><span class="nav-badge">C</span><span class="nav-text">Lab measurements</span></a><a href="#appendix-d-versions" data-target="appendix-d-versions"><span class="nav-badge">D</span><span class="nav-text">Versions</span></a></nav></aside>
-<main><header class="hero" id="top"><div class="hero-top"><div class="hero-logo"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></div><div><div class="eyebrow">Developer guide</div><h1>Meeting Cleanup</h1></div><button type="button" id="theme" class="ghost" title="Light / dark"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/></svg></button></div><div class="badges"><span class="badge badge-accent">Version 1.3.0</span><span class="badge"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Updated 2026-10-07</span><span class="badge"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Nicolas Fabert</span><span class="badge"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg>PowerShell 7.4+</span><span class="badge"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/></svg>Microsoft Graph · no stored secret</span></div><p class="lead">Finds the meetings of one or many organizers — whether the mailbox still exists or has been deleted — or <strong>every meeting of some rooms</strong> in <strong>Exchange Online</strong>: one meeting, a series or every meeting of a period, in <strong>every calendar</strong> where they are: the organizer, the rooms, the attendees, the members of the groups invited. Then removes them <strong>silently</strong>, has the organizer <strong>cancel</strong> them, or <strong>transfers</strong> them to a new organizer; a silent removal can be <strong>undone</strong>. Console, window, CSV, JSON and HTML reports.</p>
+<main><header class="hero" id="top"><div class="hero-top"><div class="hero-logo"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></div><div><div class="eyebrow">Developer guide</div><h1>Meeting Cleanup</h1></div><button type="button" id="theme" class="ghost" title="Light / dark"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/></svg></button></div><div class="badges"><span class="badge badge-accent">Version 1.3.1</span><span class="badge"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Updated 2026-11-05</span><span class="badge"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Nicolas Fabert</span><span class="badge"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg>PowerShell 7.4+</span><span class="badge"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/></svg>Microsoft Graph · no stored secret</span></div><p class="lead">Finds the meetings of one or many organizers — whether the mailbox still exists or has been deleted — or <strong>every meeting of some rooms</strong> in <strong>Exchange Online</strong>: one meeting, a series or every meeting of a period, in <strong>every calendar</strong> where they are: the organizer, the rooms, the attendees, the members of the groups invited. Then removes them <strong>silently</strong>, has the organizer <strong>cancel</strong> them, or <strong>transfers</strong> them to a new organizer; a silent removal can be <strong>undone</strong>. Console, window, CSV, JSON and HTML reports.</p>
 <div class="markdown-alert markdown-alert-important">
 <p class="markdown-alert-title"><svg class="icon-sm" viewBox="0 0 16 16" fill="currentColor" version="1.1" width="16" height="16" aria-hidden="true"><path d="M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v9.5A1.75 1.75 0 0 1 14.25 13H8.06l-2.573 2.573A1.458 1.458 0 0 1 3 14.543V13H1.75A1.75 1.75 0 0 1 0 11.25Zm1.75-.25a.25.25 0 0 0-.25.25v9.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h6.5a.25.25 0 0 0 .25-.25v-9.5a.25.25 0 0 0-.25-.25Zm7 2.25v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 9a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"></path></svg>Important</p>
 <p>Files downloaded from the Internet may be blocked by Windows and fail to run. Before using this project, unblock every file in the downloaded folder:</p>
-<div class="code"><div class="code-head"><span>PowerShell</span><button type="button" class="copy"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg><span>Copy</span></button></div><pre><code>Get-ChildItem &quot;C:\Chemin\Du\Dossier&quot; -Recurse -File -Force | Unblock-File
+<div class="code"><div class="code-head"><span>PowerShell</span><button type="button" class="copy"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg><span>Copy</span></button></div><pre><code>Get-ChildItem &quot;C:\Tools\MeetingCleanup-1.3.1&quot; -Recurse -File -Force | Unblock-File
 </code></pre></div>
 <p>Replace the example path with the folder where you downloaded or extracted this project.</p>
 <p>The <code>Install-Module</code> commands in this documentation use <code>-Force</code>, so they also update or reinstall a module that is already installed. If an older version still conflicts, close every PowerShell window, open a new one (as administrator for <code>-Scope AllUsers</code>), run <code>Uninstall-Module &lt;ModuleName&gt; -AllVersions -Force</code>, then run the <code>Install-Module</code> command again.</p>
@@ -255,7 +255,7 @@ footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--cp-bor
 </tr>
 <tr>
 <td><strong>A period</strong>, organizer deleted</td>
-<td><code class="long">-Organizer &lt;old address&gt; -SearchIn Rooms</code> then, for the meetings without room, <code>-SearchIn Mailboxes -MailboxFile .\team.txt</code> or <code>-SearchIn AllMailboxes</code></td>
+<td><code class="long">-Organizer &lt;old address&gt; -SearchIn Rooms</code> then, for the meetings without room, <code class="long">-SearchIn Mailboxes -MailboxFile C:\Tools\MeetingCleanup-data\team.txt</code> or <code>-SearchIn AllMailboxes</code></td>
 </tr>
 <tr>
 <td><strong>A meeting chosen in a report</strong></td>
@@ -263,7 +263,7 @@ footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--cp-bor
 </tr>
 <tr>
 <td><strong>Several organizers</strong> (leavers of the month, a team)</td>
-<td><code>-OrganizerFile .\leavers.txt</code> (or <code>-Organizer a@contoso.com, b@contoso.com</code>) with any of the cases above</td>
+<td><code class="long">-OrganizerFile C:\Tools\MeetingCleanup-data\leavers.txt</code> (or <code>-Organizer a@contoso.com, b@contoso.com</code>) with any of the cases above</td>
 </tr>
 <tr>
 <td><strong>Undo a Remove</strong></td>
@@ -490,7 +490,7 @@ footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--cp-bor
 <div class="code"><div class="code-head"><span>PowerShell</span><button type="button" class="copy"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg><span>Copy</span></button></div><pre><code># On the computer that runs the tool, as the account that runs it
 $cert = New-SelfSignedCertificate -Subject 'CN=MeetingCleanup' -CertStoreLocation Cert:\CurrentUser\My `
     -KeyExportPolicy NonExportable -KeySpec Signature -KeyAlgorithm RSA -KeyLength 2048 -NotAfter (Get-Date).AddYears(2)
-Export-Certificate -Cert $cert -FilePath .\MeetingCleanup.cer      # upload this file to the application
+Export-Certificate -Cert $cert -FilePath C:\Tools\MeetingCleanup-data\MeetingCleanup.cer      # upload this file to the application
 $cert.Thumbprint                                                   # Authentication.CertificateThumbprint
 </code></pre></div>
 <ol start="4">
@@ -578,6 +578,42 @@ Add-RoleGroupMember -Identity 'Meeting Cleanup Transfer' -Member (Get-ServicePri
 <p>Copy the folder, then unblock the files downloaded from the Internet:</p>
 <div class="code"><div class="code-head"><span>PowerShell</span><button type="button" class="copy"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg><span>Copy</span></button></div><pre><code>Get-ChildItem 'C:\Tools\MeetingCleanup' -Recurse -File -Force | Unblock-File
 </code></pre></div>
+<h3 id="package-integrity-and-signing">Package integrity and signing</h3>
+<p>A release package carries three layers, all checked before any of the tool is loaded or compiled:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>What it protects</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Authenticode signature</td>
+<td>The 14 PowerShell files (<code>Invoke-MeetingCleanup.ps1</code>, <code>MeetingCleanup.psm1</code>, <code>MeetingCleanup.psd1</code>, <code>src\Test-PackageIntegrity.ps1</code> and the nine <code>src\MeetingCleanup.*.ps1</code>), signed by the owner (thumbprint <code>0F28E442889F17B5F4D251E8F96E7CC6E2C9C6D6</code>) with an RFC 3161 timestamp.</td>
+</tr>
+<tr>
+<td><code>PackageIntegrity.psd1</code></td>
+<td>A list of the SHA256 of every other shipped file (C# source, report template, HTML guides, README, LICENSE, notices, CHANGELOG) and of the signed scripts. It is signed and timestamped too.</td>
+</tr>
+<tr>
+<td><code>src\Test-PackageIntegrity.ps1</code></td>
+<td>The verifier. It refuses an unsigned or untimestamped manifest, another signer, a SHA256 that differs, a missing file, an unlisted file and a reparse point (junction or symbolic link). <code>config\MeetingCleanup.config.psd1</code> (edited by the administrator) and the <code>reports\</code> and <code>logs\</code> folders are not covered.</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>Invoke-MeetingCleanup.ps1</code> runs the verifier first (<code>-Distribution</code> for a release folder), and importing the module directly does the same. A tree without <code>PackageIntegrity.psd1</code> is refused unless <code>-DevelopmentMode</code> is given; a manifest that is present is always verified. The message <em>Package integrity: ...</em> names the file; the answer is to download the release ZIP again.</p>
+<p>Nothing executable is loaded without the manifest covering it: the C# source is hashed, then compiled in memory with <code>Add-Type</code> at each import. No compiled DLL is cached on disk or read back.</p>
+<p>Only the configuration file and the <code>reports\</code> and <code>logs\</code> folders may change inside a verified package; keep lists of addresses, exported certificates and other files of your own in a folder outside it (for example <code>C:\Tools\MeetingCleanup-data</code>).</p>
+<p>The owner builds a release in three phases (the signing key is never read by the tool):</p>
+<div class="code"><div class="code-head"><span>PowerShell</span><button type="button" class="copy"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg><span>Copy</span></button></div><pre><code># 1. Sign the 14 PowerShell files (RFC 3161 timestamp http://ts.ssl.com), then build from the signed sources
+.\tools\New-MeetingCleanupPackage.ps1 -Destination C:\work\build\MeetingCleanup-1.3.1
+# 2. Write the unsigned manifest in the built folder, sign it, copy it to package\PackageIntegrity.psd1
+.\tools\New-MeetingCleanupPackage.ps1 -Manifest C:\work\build\MeetingCleanup-1.3.1
+# 3. Verify the signed manifest against the built folder and package\, compare every byte, write the ZIP
+.\tools\New-MeetingCleanupPackage.ps1 -Seal C:\work\build\MeetingCleanup-1.3.1
+</code></pre></div>
+<p>The ZIP has one root folder, <code>MeetingCleanup-&lt;version&gt;\</code>. Continuous integration builds an unsigned package with <code>-Unsigned</code> (no ZIP is a release). Any change to a protected file after the manifest is signed needs a new manifest. To work from a clone, build a folder with <code>-Unsigned</code> and start it with <code>-DevelopmentMode</code>.</p>
 </div></section><section class="section" id="configuration"><div class="section-head"><div class="section-icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg></div><div><div class="section-eyebrow">Chapter 7</div><h2>Configuration</h2></div></div><div class="section-body">
 <p><code>config\MeetingCleanup.config.psd1</code> is a PowerShell data file. Every value is checked at start and all the problems are listed at once; the parameters of the command line override it for one run.</p>
 <div class="table-wrap"><table>
@@ -804,7 +840,7 @@ Add-RoleGroupMember -Identity 'Meeting Cleanup Transfer' -Member (Get-ServicePri
 .\Invoke-MeetingCleanup.ps1 -FromReport .\reports\MeetingCleanup_Report_20261005-201500 -Action Remove
 
 # The leavers of the month (one address per line), every meeting of the coming year
-.\Invoke-MeetingCleanup.ps1 -OrganizerFile .\leavers-2026-10.txt -SearchIn Organizer, Rooms
+.\Invoke-MeetingCleanup.ps1 -OrganizerFile C:\Tools\MeetingCleanup-data\leavers-2026-10.txt -SearchIn Organizer, Rooms
 
 # Undo a Remove: the copies come back, without a message
 .\Invoke-MeetingCleanup.ps1 -Action Restore -FromReport .\reports\MeetingCleanup_Remove_20261005-203000
@@ -1088,7 +1124,7 @@ Add-RoleGroupMember -Identity 'Meeting Cleanup Transfer' -Member (Get-ServicePri
 </tr>
 <tr>
 <td><code>src\MeetingCleanup.Native.cs</code></td>
-<td>Compiled helper (C#, built by <code>Add-Type</code> when the module loads): meeting and copy objects, filter of the events, totals, CSV and JSON of the report, rows of the window.</td>
+<td>Compiled helper (C#, compiled in memory by <code>Add-Type</code> from the verified source each time the module loads; no compiled file is written or reused): meeting and copy objects, filter of the events, totals, CSV and JSON of the report, rows of the window.</td>
 </tr>
 </tbody>
 </table></div>
@@ -1199,6 +1235,14 @@ Add-RoleGroupMember -Identity 'Meeting Cleanup Transfer' -Member (Get-ServicePri
 <tr>
 <td><em>Invalid configuration</em></td>
 <td>Every problem is listed with the setting to change.</td>
+</tr>
+<tr>
+<td><em>Package integrity: unexpected stable file: ...</em></td>
+<td>A file of your own is in the tool folder (a list, a certificate, a copy of the configuration). Move it out, for example to <code>C:\Tools\MeetingCleanup-data\</code>, and give its full path to the tool.</td>
+</tr>
+<tr>
+<td><em>Package integrity: SHA256 mismatch</em> · <em>missing inventory path</em> · <em>expected trusted, timestamped owner signature</em></td>
+<td>A file of the package is changed or missing, or the download is not the published one. Download the ZIP again from the Releases page, extract it and unblock it.</td>
 </tr>
 <tr>
 <td><code>AADSTS700016</code> · <code>AADSTS700027</code> · <code>AADSTS7000215</code></td>
@@ -1439,7 +1483,7 @@ Restore-RecoverableItems -Identity adele.vance@contoso.com -SourceFolder PurgedI
 </div></section><section class="section" id="appendix-d-versions"><div class="section-head"><div class="section-icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8" r="1.5"/></svg></div><div><div class="section-eyebrow">Appendix D</div><h2>Versions</h2></div></div><div class="section-body">
 <p>MAJOR.MINOR.PATCH: MAJOR for a change of configuration or report format, MINOR for a new search or action, PATCH for a fix. Each change is described in <code>CHANGELOG.md</code>.</p>
 </div></section>
-<footer>Meeting Cleanup 1.3.0 · Nicolas Fabert · generated on 2026-10-08 09:45 from MeetingCleanup-Guide.md</footer></main>
+<footer>Meeting Cleanup 1.3.1 · Nicolas Fabert · updated 2026-11-05 · built from MeetingCleanup-Guide.md</footer></main>
 <button type="button" id="to-top" title="Back to top"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 14 6-6 6 6"/></svg></button>
 <dialog id="zoom"><img alt=""></dialog>
 <script>

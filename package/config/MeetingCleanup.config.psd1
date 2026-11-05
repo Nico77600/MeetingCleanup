@@ -2,7 +2,7 @@
 #  Meeting Cleanup - configuration file
 #  --------------------------------------------------------------------------
 #  Author  : Nicolas Fabert
-#  Version : 1.3.0
+#  Version : 1.3.1
 #
 #  Read by Invoke-MeetingCleanup.ps1 and by the window (-Gui). It is a PowerShell data file: text between
 #  quotes, $true / $false, numbers, @( ) for lists and @{ } for groups of settings. Lines starting with #

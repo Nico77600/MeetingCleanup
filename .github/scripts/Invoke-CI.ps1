@@ -128,7 +128,9 @@ switch ($Stage) {
         if (Test-Path -LiteralPath $destination) { throw 'The package output already exists; it will not be overwritten.' }
         & {
             Set-StrictMode -Off
-            & $builder -Destination $destination
+            $packageSwitches = @{}
+            foreach ($switchName in @($configuration.packageSwitches)) { if ($switchName) { $packageSwitches[[string]$switchName] = $true } }
+            & $builder -Destination $destination @packageSwitches
         }
         $entry = Join-Path $destination $configuration.packageEntry
         if (-not (Test-Path -LiteralPath $entry -PathType Leaf)) {

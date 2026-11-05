@@ -1354,7 +1354,7 @@ Describe 'Command line' {
     It 'stops with exit code 1 and the list of the problems on a wrong configuration' {
         $path = Join-Path $script:RepoRoot 'artifacts\cli-bad.config.psd1'
         "@{ Graph = @{ MaxConcurrency = 0 } }" | Set-Content $path
-        $out = & pwsh -NoProfile -File (Join-Path $script:Root 'Invoke-MeetingCleanup.ps1') -ConfigPath $path -Organizer 'a@contoso.test' 2>&1
+        $out = & pwsh -NoProfile -File (Join-Path $script:Root 'Invoke-MeetingCleanup.ps1') -DevelopmentMode -ConfigPath $path -Organizer 'a@contoso.test' 2>&1
         $LASTEXITCODE | Should -Be 1
         ($out -join ' ') | Should -Match 'Graph.MaxConcurrency must be'
         Remove-Item $path
@@ -1363,7 +1363,7 @@ Describe 'Command line' {
     It 'refuses to run without an organizer' {
         $path = Join-Path $script:RepoRoot 'artifacts\cli-ok.config.psd1'
         "@{ Logging = @{ Path = '$((Join-Path $script:RepoRoot 'artifacts\test-logs'))' } }" | Set-Content $path
-        $out = & pwsh -NoProfile -File (Join-Path $script:Root 'Invoke-MeetingCleanup.ps1') -ConfigPath $path 2>&1
+        $out = & pwsh -NoProfile -File (Join-Path $script:Root 'Invoke-MeetingCleanup.ps1') -DevelopmentMode -ConfigPath $path 2>&1
         $LASTEXITCODE | Should -Be 1
         ($out -join ' ') | Should -Match 'Give the organizer'
         Remove-Item $path

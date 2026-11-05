@@ -19,7 +19,7 @@
 > Files downloaded from the Internet may be blocked by Windows and fail to run. Before using this project, unblock every file in the downloaded folder:
 >
 > ```powershell
-> Get-ChildItem "C:\Chemin\Du\Dossier" -Recurse -File -Force | Unblock-File
+> Get-ChildItem "C:\Tools\MeetingCleanup-1.3.1" -Recurse -File -Force | Unblock-File
 > ```
 >
 > Replace the example path with the folder where you downloaded or extracted this project.
@@ -39,20 +39,20 @@ This tool does it for **Exchange Online** with one search for every case, a repo
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="package/docs/images/readme-how-it-works-dark.png">
-  <img alt="The search: organizers or rooms, the mailboxes where to search, the calendar items of the period, every copy by its iCalUId (attendees, rooms, members of the groups invited), then the action after confirmation. Four actions: Remove (silent, restorable), Cancel (by the organizer, with your message), Transfer (moved by Exchange Online or re-created by the new organizer), Restore (from Recoverable Items, without a message)" src="package/docs/images/readme-how-it-works-light.png">
+  <img alt="The search: organizers or rooms, the mailboxes where to search, the calendar items of the period, every copy (attendees, rooms, members of the groups invited), then the action after confirmation. Four actions: Remove (silent, restorable), Cancel (by the organizer, with your message), Transfer (moved by Exchange Online or re-created by the new organizer), Restore (from Recoverable Items, without a message)" src="package/docs/images/readme-how-it-works-light.png">
 </picture>
 
-- **Every copy, wherever the meeting is found**: one copy of a meeting holds its whole attendee list. Every internal attendee, room and member of an invited group is then asked for its own copy, by **iCalUId** (the same in every copy). External or deleted attendees are listed, not processed.
+- **Every copy, wherever the meeting is found**: one copy of a meeting holds its whole attendee list. Every internal attendee, room and member of an invited group is then asked for its own copy. External or deleted attendees are listed, not processed.
 - **Organizer present or gone**: its calendar when the mailbox exists; the rooms, a list of mailboxes or every mailbox of the tenant when it does not — from the old address or the X500 address of the deleted mailbox. A list of organizers is searched in one pass.
 - **Rooms over a period** (`-Room`, `-RoomFile`): every meeting of the rooms, whatever its organizer. A series is limited to the occurrences the rooms hold in the period; it goes on before and after.
 - **One occurrence of a series** (`-SeriesScope Occurrences`, or *Series: only the occurrences of the period* in the window): a series is limited to its occurrences in the period — one day, one occurrence — for everyone (*Cancel*) or silently (*Remove*). In the window, **Occurrences...** ticks the ones to act on; the series goes on.
 - **Nothing by surprise**: the report is the default action. Every action shows exactly what it will do and asks to type **YES**; a backup (`Backup.json`) is written before any change; each copy removed is read again to check it is gone. `-FromReport` acts on exactly the meetings of a reviewed report.
-- **Large tenants**: `$batch` requests of Microsoft Graph, 16 in flight; the window runs every search and action in the background and keeps answering, with a progress bar and the time left — about 6,000 mailboxes read in a minute and a half in the lab.
+- **Large tenants**: the window runs every search and action in the background and keeps answering, with a progress bar and the time left.
 - **Application permissions of Microsoft Graph** and a certificate: no user account, no module for the search, Remove, Cancel and a re-creation.
 
 ## The actions
 
-Measured on a lab tenant ([developer guide, chapter 4](package/docs/MeetingCleanup-Guide.md#4-the-actions) and appendix C):
+What each action does ([developer guide, chapter 4](package/docs/MeetingCleanup-Guide.md#4-the-actions) and appendix C):
 
 | Action | Organizer's meeting | Attendees and rooms | Messages |
 |---|---|---|---|
@@ -129,44 +129,48 @@ Each run writes `MeetingCleanup-Meetings.csv`, `-Copies.csv`, `-Organizers.csv` 
 
 ## Quick start
 
-Download `MeetingCleanup-<version>.zip` from the [latest release](https://github.com/Nico77600/MeetingCleanup/releases/latest), extract it (for example in `C:\Tools`) and unblock the files (command at the top of this page). You can also copy the repository `package` folder.
+You need PowerShell 7.4 or later: open it with `pwsh` and run `$PSVersionTable.PSVersion` (Windows PowerShell 5.1 is not enough). The full steps, with what you should see at each one, are in the [user guide](package/docs/MeetingCleanup-UserGuide.md).
 
-```powershell
-cd C:\Tools\MeetingCleanup-1.3.0
-notepad .\config\MeetingCleanup.config.psd1          # tenant, application, certificate thumbprint
+1. **Download** `MeetingCleanup-<version>.zip` from the [latest release](https://github.com/Nico77600/MeetingCleanup/releases/latest) (not the *Source code* archives) and extract it, for example to `C:\Tools\MeetingCleanup-1.3.1`.
+2. **Unblock the files** once (command at the top of this page).
+3. **Fill in the configuration**: `notepad .\config\MeetingCleanup.config.psd1` (tenant, application, certificate thumbprint).
+4. **First run: a report.** It changes nothing.
 
-.\Invoke-MeetingCleanup.ps1 -Gui                     # the window: search, untick, act, restore
+   ```powershell
+   cd C:\Tools\MeetingCleanup-1.3.1
+   .\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com
+   ```
 
-# Or the command line: always a report first (nothing is changed), then the same command with the action
-.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com
-.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Action Cancel -Comment 'Megan has left the company.'
-.\Invoke-MeetingCleanup.ps1 -Organizer john.doe@contoso.com -SearchIn Rooms, AllMailboxes -Action Transfer -NewOrganizer jane.roe@contoso.com
-.\Invoke-MeetingCleanup.ps1 -Room room-paris-01@contoso.com -Start 2026-11-02 -End 2026-11-13 -Action Cancel -Comment 'Closed for works.'
-.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Subject 'Weekly sales review' -SeriesScope Occurrences -Start 2026-11-16 -End 2026-11-16 -Action Cancel -Comment 'Not this Monday.'
-.\Invoke-MeetingCleanup.ps1 -Action Restore -FromReport .\reports\MeetingCleanup_Remove_20261105-093000
-```
+   You should see the meetings found and a folder under `reports\` with `MeetingCleanup.html`: open it in a browser.
+5. **Then the same command with the action.** It shows what it will do and asks you to type YES.
 
-One command per everyday question — who still organizes what, a leaver with or without mailbox, a transfer, one series, one occurrence of a series, rooms closed, the leavers of the month, undo a removal: see the [user guide](package/docs/MeetingCleanup-UserGuide.md).
+   ```powershell
+   .\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Action Cancel -Comment 'Megan has left the company.'
+   ```
 
-The `package` folder of this repository holds exactly the files needed to run, with the guides. The zip of each [release](https://github.com/Nico77600/MeetingCleanup/releases) contains the same run-time files with the HTML guides; `.\tools\New-MeetingCleanupPackage.ps1` builds that zip content from the repository.
+   Or `.\Invoke-MeetingCleanup.ps1 -Gui` for the window.
+
+Transfer, rooms, one occurrence of a series and Restore have their own commands in the [user guide](package/docs/MeetingCleanup-UserGuide.md), chapter 2.
+
+**For developers**: `git clone https://github.com/Nico77600/MeetingCleanup`, then `.\tools\New-MeetingCleanupPackage.ps1 -Unsigned` builds the package folder from the repository (see the [developer guide](package/docs/MeetingCleanup-Guide.md#15-documentation-and-package)).
 
 ## Documentation
 
 | Guide | Content |
 |---|---|
 | **[User guide](package/docs/MeetingCleanup-UserGuide.md)** | For the people who run the tool: **prerequisites**, the one-time setup and **everyday commands only** — which meetings this person still organizes, a person has left (mailbox kept or deleted), give the meetings to someone else, one series without a message, rooms closed for works, the leavers of the month, undo a removal, the window, the results. |
-| **[Developer guide](package/docs/MeetingCleanup-Guide.md)** | Everything else: how it works, every case, each action as measured on a lab tenant (Remove, Cancel, rooms mode, Transfer, Restore), the application and the Exchange Online roles, every setting and parameter, the window, the report, the files produced, the architecture, performance and limits, tests, troubleshooting, security. |
+| **[Developer guide](package/docs/MeetingCleanup-Guide.md)** | Everything else: how it works, every case, each action in detail (Remove, Cancel, rooms mode, Transfer, Restore), the application and the Exchange Online roles, every setting and parameter, the window, the report, the files produced, the architecture, performance and limits, tests, troubleshooting, security. |
 
 Both guides also exist as a single HTML file with a light and a dark theme (`package/docs/MeetingCleanup-UserGuide.html`, `package/docs/MeetingCleanup-Guide.html`): download them and open them locally, or use the copies in the release zip.
 
-## Tests
+## Tests (for developers)
+
+The tests need no network and no tenant: they run against a simulated Exchange Online.
 
 ```powershell
 .\Run-Tests.ps1                                  # Pester 6.1+, a simulated Exchange Online tenant, no network
 pwsh -STA -File .\tools\Measure-MeetingCleanup.ps1 -Meetings 600 -Search -Gui   # time of each step, synthetic data
 ```
-
-The tool was also validated on a lab tenant (about 6,000 mailboxes, 1,860 rooms): organizers present, soft-deleted and deleted, lists of organizers, Remove and Restore without any message, Cancel, rooms over a period with series, one occurrence of a series cancelled or chosen in the window, transfers moved by Exchange Online and re-created for a deleted mailbox ([developer guide, appendix C](package/docs/MeetingCleanup-Guide.md#appendix-c---lab-measurements)).
 
 ## License
 
