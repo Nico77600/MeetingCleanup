@@ -9,7 +9,7 @@
 //   GuiRows   the rows of the window (compiled objects: WPF binds and scrolls them without PowerShell)
 //
 // Author : Nicolas Fabert
-// Version: 1.3.0
+// Version: 1.3.1
 
 using System;
 using System.Collections;
@@ -28,7 +28,7 @@ namespace MeetingCleanupNative
 {
     public static class Fast
     {
-        public const string Version = "1.3.0";
+        public const string Version = "1.3.1";
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
         static readonly string[] CopyRoles = { "Organizer", "Attendee", "Room" };
 

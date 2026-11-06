@@ -1,59 +1,88 @@
 # Meeting Cleanup
 
-Meeting Cleanup finds the meetings of organizers who left or stay, or every meeting of some rooms, in every calendar where they are in Exchange Online, then removes them silently, has the organizer cancel them, or transfers them to a new organizer, even when the old mailbox is gone.
+Version: 1.3.1
 
-This folder contains everything needed to run the tool: Invoke-MeetingCleanup.ps1, the module, the configuration, the report template and the guides. Tests and build tools stay outside it, in the repository.
+Meeting Cleanup finds the meetings of organizers who left or stay, or every meeting of some rooms, in every calendar where they are in Exchange Online. Then it removes them silently, has the organizer cancel them, or transfers them to a new organizer, even when the old mailbox is gone.
 
-> [!IMPORTANT]
-> Files downloaded from the Internet may be blocked by Windows. Unblock them once, from this folder:
->
-> ```powershell
-> Get-ChildItem . -Recurse -File | Unblock-File
-> ```
+This folder is the complete release: the tool, its configuration, the report template and both guides. Open `docs\MeetingCleanup-UserGuide.html` in a browser for the full steps.
 
-## Requirements
+## What you need
+
 - Exchange Online only.
-- PowerShell 7.4 or later.
+- PowerShell 7.4 or later (not Windows PowerShell 5.1). Open PowerShell 7 with `pwsh`, then run `$PSVersionTable.PSVersion`: the version must be 7.4 or later.
 - Windows 10 / 11 or Windows Server 2016 to 2025.
-- Microsoft Entra application permissions: Calendars.ReadWrite (or Calendars.ReadWrite.All), User.Read.All, Place.Read.All and GroupMember.Read.All.
-- Certificate private key in the Windows store of the account that runs the tool.
-- ExchangeOnlineManagement 3.2+ and roles are needed for Restore or native Transfer.
+- An application registered in Microsoft Entra, with a certificate. The user guide, chapter 1, gives every click.
 
-## Quick start
+## Get started
+
+**1. Check the download.**
+
+Do: open PowerShell 7 in this folder and run:
+
 ```powershell
-notepad .\config\MeetingCleanup.config.psd1          # tenant, application, certificate thumbprint
-
-.\Invoke-MeetingCleanup.ps1 -Gui                     # the window: search, untick, act, restore
-
-# Or the command line: always a report first (nothing is changed), then the same command with the action
-.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com
-.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Action Cancel -Comment 'Megan has left the company.'
-.\Invoke-MeetingCleanup.ps1 -Organizer john.doe@contoso.com -SearchIn Rooms, AllMailboxes -Action Transfer -NewOrganizer jane.roe@contoso.com
-.\Invoke-MeetingCleanup.ps1 -Room room-paris-01@contoso.com -Start 2026-11-02 -End 2026-11-13 -Action Cancel -Comment 'Closed for works.'
-.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Subject 'Weekly sales review' -SeriesScope Occurrences -Start 2026-11-16 -End 2026-11-16 -Action Cancel -Comment 'Not this Monday.'
-.\Invoke-MeetingCleanup.ps1 -Action Restore -FromReport .\reports\MeetingCleanup_Remove_20261105-093000
+Get-AuthenticodeSignature .\Invoke-MeetingCleanup.ps1 | Format-List Status, SignerCertificate
 ```
 
+You should see: `Status : Valid` and the signer `Nicolas Fabert`.
+If not: download the ZIP again from the [Releases page](https://github.com/Nico77600/MeetingCleanup/releases/latest). Use the ZIP named `MeetingCleanup-<version>.zip`, not the *Source code* archives.
+
+**2. Unblock the files.** Windows may block files downloaded from the Internet. Run this once, from this folder:
+
+```powershell
+Get-ChildItem . -Recurse -File -Force | Unblock-File
+```
+
+You should see: nothing, and no error.
+
+**3. Fill in the configuration.** Keep your own files (lists of addresses, certificate exports) outside the tool folder, for example in `C:\Tools\MeetingCleanup-data`, and give their absolute path.
+
+Do: `notepad .\config\MeetingCleanup.config.psd1`, then enter your tenant ID, the application (client) ID and the certificate thumbprint.
+You should see: the same file, saved, with your three values.
+If not: the user guide, chapter 1, shows how to create the application and the certificate.
+
+**4. First run: a report.** A report changes nothing.
+
+```powershell
+.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com
+```
+
+You should see: the steps of the run, the meetings found and the folder `reports\MeetingCleanup_Report_<date>` with `MeetingCleanup.html`. Open that file in a browser.
+If not: the user guide, chapter 4, explains the usual messages.
+
+**5. Then the same command with the action.** The tool shows exactly what it will do and asks you to type YES.
+
+> [!WARNING]
+> A cancellation is sent to every attendee and cannot be undone. Always read the report first.
+
+```powershell
+.\Invoke-MeetingCleanup.ps1 -Organizer megan.bowen@contoso.com -Action Cancel -Comment 'Megan has left the company.'
+```
+
+You can also run `.\Invoke-MeetingCleanup.ps1 -Gui` for the window. Remove, Transfer and Restore are in the user guide, chapter 2.
+
 ## Content
+
 | Item | Role |
 |---|---|
-| Invoke-MeetingCleanup.ps1 | Entry script for the window and command line. |
-| MeetingCleanup.psd1 | Module manifest. |
-| MeetingCleanup.psm1 | Module loader. |
-| config | Delivered configuration template. |
-| docs | User and developer guides in Markdown and HTML, with images. |
-| src | PowerShell source files and native helper source. |
+| Invoke-MeetingCleanup.ps1 | Entry script for the window and the command line. |
+| MeetingCleanup.psd1, MeetingCleanup.psm1 | The module. |
+| PackageIntegrity.psd1 | Signed list of the SHA256 of every file, checked before anything loads. Do not edit. |
+| README.md | This file. |
+| config | The configuration to fill in. |
+| docs | User guide and developer guide (HTML, one file each, open them in a browser). |
+| src | PowerShell and C# source files of the tool. |
 | templates | HTML report template. |
 | LICENSE | MIT license. |
 | THIRD-PARTY-NOTICES.md | Third-party notices. |
+| CHANGELOG.md | Changes of each version. |
 
-## Documentation
-- [User guide](docs/MeetingCleanup-UserGuide.md) - also `docs/MeetingCleanup-UserGuide.html`, a single file to open locally
-- [Developer guide](docs/MeetingCleanup-Guide.md) - also `docs/MeetingCleanup-Guide.html`
+## More
 
-Project page, releases and change log: https://github.com/Nico77600/MeetingCleanup
+- [User guide](docs/MeetingCleanup-UserGuide.html): prerequisites, setup and one command per everyday question.
+- [Developer guide](docs/MeetingCleanup-Guide.html): how it works, rights, settings and troubleshooting.
+- [Changes](CHANGELOG.md) · [License](LICENSE) · [Third-party notices](THIRD-PARTY-NOTICES.md)
 
-License: [MIT](LICENSE).
+Project page and releases: https://github.com/Nico77600/MeetingCleanup
 
 ## Disclaimer
 

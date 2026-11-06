@@ -1,2 +1,27 @@
 # Language statistics: the guides are documentation, not code.
 package/docs/** linguist-documentation
+
+# Signed PowerShell files and the signed manifest: stored and checked out byte for byte (CRLF), never converted.
+package/**/*.ps1 -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+package/**/*.psm1 -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+package/MeetingCleanup.psd1 -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+package/PackageIntegrity.psd1 -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+
+# Other files hashed by the signed manifest: byte for byte as well.
+package/src/MeetingCleanup.Native.cs -text
+package/templates/Report.template.html -text
+package/docs/MeetingCleanup-UserGuide.html -text
+package/docs/MeetingCleanup-Guide.html -text
+package/README.md -text
+package/LICENSE -text
+package/THIRD-PARTY-NOTICES.md -text
+CHANGELOG.md -text
+
+# Source archive (Code > Download ZIP, git archive): development paths are left out. Use the release ZIP to run the tool.
+/tests/ export-ignore
+/tools/ export-ignore
+/.github/ export-ignore
+/Run-Tests.ps1 export-ignore
+/AGENTS.md export-ignore
+/package/docs/*.md export-ignore
+/package/docs/images/ export-ignore

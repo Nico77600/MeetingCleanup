@@ -1,9 +1,9 @@
 ---
 title: Meeting Cleanup
 subtitle: Developer guide
-version: 1.3.0
+version: 1.3.1
 author: Nicolas Fabert
-updated: 2026-10-07
+updated: 2026-11-05
 ---
 
 # Meeting Cleanup — Developer guide
@@ -14,7 +14,7 @@ updated: 2026-10-07
 > Files downloaded from the Internet may be blocked by Windows and fail to run. Before using this project, unblock every file in the downloaded folder:
 >
 > ```powershell
-> Get-ChildItem "C:\Chemin\Du\Dossier" -Recurse -File -Force | Unblock-File
+> Get-ChildItem "C:\Tools\MeetingCleanup-1.3.1" -Recurse -File -Force | Unblock-File
 > ```
 >
 > Replace the example path with the folder where you downloaded or extracted this project.
@@ -103,9 +103,9 @@ Every case is the same command: what changes is the organizer state, what is sea
 | **A series**, present or not at the organizer | the same: a series is one meeting, handled as a whole (every occurrence and exception) |
 | **One or some occurrences of a series** | `-Organizer <address> -Subject 'Weekly review' -SeriesScope Occurrences -Start 2026-11-16 -End 2026-11-16` — or the window: *Series: only the occurrences of the period*, then *Occurrences...* to tick them (below) |
 | **A period**, organizer present | `-Organizer <address> -Start 2026-11-01 -End 2026-12-31` |
-| **A period**, organizer deleted | `-Organizer <old address> -SearchIn Rooms` then, for the meetings without room, `-SearchIn Mailboxes -MailboxFile .\team.txt` or `-SearchIn AllMailboxes` |
+| **A period**, organizer deleted | `-Organizer <old address> -SearchIn Rooms` then, for the meetings without room, `-SearchIn Mailboxes -MailboxFile C:\Tools\MeetingCleanup-data\team.txt` or `-SearchIn AllMailboxes` |
 | **A meeting chosen in a report** | `-Organizer <address> -MeetingId <MeetingId of the report>`, or `-FromReport <folder> -MeetingId <id>` |
-| **Several organizers** (leavers of the month, a team) | `-OrganizerFile .\leavers.txt` (or `-Organizer a@contoso.com, b@contoso.com`) with any of the cases above |
+| **Several organizers** (leavers of the month, a team) | `-OrganizerFile C:\Tools\MeetingCleanup-data\leavers.txt` (or `-Organizer a@contoso.com, b@contoso.com`) with any of the cases above |
 | **Undo a Remove** | `-Action Restore -FromReport <folder of the Remove run>` |
 | **Every meeting of some rooms** over a period (works, closed floor) | `-Room room-paris-01@contoso.com, room-paris-02@contoso.com -Start 2026-11-02 -End 2026-11-13` (or `-RoomFile`) — then `-Action Cancel -Comment '...'` |
 | **Give the meetings of a person to someone else** (present or deleted mailbox) | `-Organizer <address> -SearchIn Rooms, AllMailboxes -Action Transfer -NewOrganizer <address>` |
@@ -251,7 +251,7 @@ The tool signs in as an **application** (no user), with application permissions 
 # On the computer that runs the tool, as the account that runs it
 $cert = New-SelfSignedCertificate -Subject 'CN=MeetingCleanup' -CertStoreLocation Cert:\CurrentUser\My `
     -KeyExportPolicy NonExportable -KeySpec Signature -KeyAlgorithm RSA -KeyLength 2048 -NotAfter (Get-Date).AddYears(2)
-Export-Certificate -Cert $cert -FilePath .\MeetingCleanup.cer      # upload this file to the application
+Export-Certificate -Cert $cert -FilePath C:\Tools\MeetingCleanup-data\MeetingCleanup.cer      # upload this file to the application
 $cert.Thumbprint                                                   # Authentication.CertificateThumbprint
 ```
 
@@ -318,6 +318,36 @@ Copy the folder, then unblock the files downloaded from the Internet:
 Get-ChildItem 'C:\Tools\MeetingCleanup' -Recurse -File -Force | Unblock-File
 ```
 
+### Package integrity and signing
+
+A release package carries three layers, all checked before any of the tool is loaded or compiled:
+
+| Layer | What it protects |
+|---|---|
+| Authenticode signature | The 13 PowerShell files (`Invoke-MeetingCleanup.ps1`, `MeetingCleanup.psm1`, `MeetingCleanup.psd1`, `src\Test-PackageIntegrity.ps1` and the nine `src\MeetingCleanup.*.ps1`), signed by the owner (thumbprint `0F28E442889F17B5F4D251E8F96E7CC6E2C9C6D6`) with an RFC 3161 timestamp. |
+| `PackageIntegrity.psd1` | A list of the SHA256 of every other shipped file (C# source, report template, HTML guides, README, LICENSE, notices, CHANGELOG) and of the signed scripts. It is signed and timestamped too. |
+| `src\Test-PackageIntegrity.ps1` | The verifier. It refuses an unsigned or untimestamped manifest, another signer, a SHA256 that differs, a missing file, an unlisted file and a reparse point (junction or symbolic link). `config\MeetingCleanup.config.psd1` (edited by the administrator) and the `reports\` and `logs\` folders are not covered. |
+
+`Invoke-MeetingCleanup.ps1` runs the verifier first (`-Distribution` for a release folder), and importing the module directly does the same. A tree without `PackageIntegrity.psd1` is refused unless `-DevelopmentMode` is given; a manifest that is present is always verified. The message *Package integrity: ...* names the file; the answer is to download the release ZIP again.
+
+Nothing executable is loaded without the manifest covering it: the C# source is hashed, then compiled in memory with `Add-Type` at each import. No compiled DLL is cached on disk or read back.
+
+Only the configuration file and the `reports\` and `logs\` folders may change inside a verified package; keep lists of addresses, exported certificates and other files of your own in a folder outside it (for example `C:\Tools\MeetingCleanup-data`).
+
+The generated folders `reports\` and `logs\` are not hashed, but the verifier first checks that they are not reparse points: a junction or symbolic link in their place is refused. This is intended (the verifier of Exchange Log Report skips its generated folders without that check).
+
+The owner builds a release in three phases (the signing key is never read by the tool):
+
+```powershell
+# 1. Sign the 13 PowerShell files (RFC 3161 timestamp http://ts.ssl.com), then build from the signed sources
+.\tools\New-MeetingCleanupPackage.ps1 -Destination C:\work\build\MeetingCleanup-1.3.1
+# 2. Write the unsigned manifest in the built folder, sign it, copy it to package\PackageIntegrity.psd1
+.\tools\New-MeetingCleanupPackage.ps1 -Manifest C:\work\build\MeetingCleanup-1.3.1
+# 3. Verify the signed manifest against the built folder and package\, compare every byte, write the ZIP
+.\tools\New-MeetingCleanupPackage.ps1 -Seal C:\work\build\MeetingCleanup-1.3.1
+```
+
+The ZIP has one root folder, `MeetingCleanup-<version>\`. Continuous integration builds an unsigned package with `-Unsigned` (no ZIP is a release). Any change to a protected file after the manifest is signed needs a new manifest. To work from a clone, build a folder with `-Unsigned` and start it with `-DevelopmentMode`. A developer who edits a protected file after the signed manifest is committed deletes `package\PackageIntegrity.psd1` locally (never commits that deletion) and starts the tool with `-DevelopmentMode`; the file is restored with `git restore package\PackageIntegrity.psd1`. Paths of lists and credential files in the configuration are absolute and point to the data folder, for example `C:\Tools\MeetingCleanup-data\team.txt`.
 <!-- icon: settings -->
 ## 7. Configuration
 
@@ -393,7 +423,7 @@ A file of mailboxes (`-MailboxFile`, `Search.MailboxFile`, `Search.RoomFile`) is
 .\Invoke-MeetingCleanup.ps1 -FromReport .\reports\MeetingCleanup_Report_20261005-201500 -Action Remove
 
 # The leavers of the month (one address per line), every meeting of the coming year
-.\Invoke-MeetingCleanup.ps1 -OrganizerFile .\leavers-2026-10.txt -SearchIn Organizer, Rooms
+.\Invoke-MeetingCleanup.ps1 -OrganizerFile C:\Tools\MeetingCleanup-data\leavers-2026-10.txt -SearchIn Organizer, Rooms
 
 # Undo a Remove: the copies come back, without a message
 .\Invoke-MeetingCleanup.ps1 -Action Restore -FromReport .\reports\MeetingCleanup_Remove_20261005-203000
@@ -522,7 +552,7 @@ CSV files are UTF-8 with BOM; cells starting with `=`, `+`, `-`, `@` are prefixe
 | `src\MeetingCleanup.Transfer.ps1` | Transfer: plan, Exchange Online (`Invoke-ChangeMeetingOrganizer`) or re-creation (create, shape, invite, old copies). |
 | `src\MeetingCleanup.Report.ps1` · `templates\Report.template.html` | CSV, JSON and HTML. |
 | `src\MeetingCleanup.Gui.ps1` | WPF window with the Fluent theme; searches and actions in a background runspace. |
-| `src\MeetingCleanup.Native.cs` | Compiled helper (C#, built by `Add-Type` when the module loads): meeting and copy objects, filter of the events, totals, CSV and JSON of the report, rows of the window. |
+| `src\MeetingCleanup.Native.cs` | Compiled helper (C#, compiled in memory by `Add-Type` from the verified source each time the module loads; no compiled file is written or reused): meeting and copy objects, filter of the events, totals, CSV and JSON of the report, rows of the window. |
 
 **Graph requests.** Everything goes through `$batch` calls of 20 requests, 16 calls in flight, never more than 4 requests at a time for the same mailbox (limit of Exchange Online). A 429 or 5xx is retried after its *Retry-After*; the token is renewed 5 minutes before it expires.
 
@@ -595,6 +625,8 @@ A link from one guide to the other is written with its GitHub anchor (`MeetingCl
 | Symptom | Cause and action |
 |---|---|
 | *Invalid configuration* | Every problem is listed with the setting to change. |
+| *Package integrity: unexpected stable file: ...* | A file of your own is in the tool folder (a list, a certificate, a copy of the configuration). Move it out, for example to `C:\Tools\MeetingCleanup-data\`, and give its full path to the tool. |
+| *Package integrity: SHA256 mismatch* · *missing inventory path* · *expected trusted, timestamped owner signature* | A file of the package is changed or missing, or the download is not the published one. Download the ZIP again from the Releases page, extract it and unblock it. |
 | `AADSTS700016` · `AADSTS700027` · `AADSTS7000215` | Application ID not in the tenant · certificate not on the application, or another one · wrong secret. |
 | *Certificate ... not found* · *without its private key* | Import the `.pfx` (not the `.cer`) for the account that runs the tool, in `CurrentUser\My` or `LocalMachine\My`. |
 | *Connected to tenant ..., but Tenant.TenantId is ...* | The application belongs to another tenant: nothing was read. |

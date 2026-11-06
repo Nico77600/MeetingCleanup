@@ -5,7 +5,7 @@ param()
 $ErrorActionPreference = 'Stop'
 Import-Module Pester -MinimumVersion 6.1.0
 $configuration = New-PesterConfiguration
-$configuration.Run.Path = Join-Path $PSScriptRoot 'tests\MeetingCleanup.Tests.ps1'
+$configuration.Run.Path = @((Join-Path $PSScriptRoot 'tests\MeetingCleanup.Tests.ps1'), (Join-Path $PSScriptRoot 'tests\PackageIntegrity.Tests.ps1'))
 $configuration.Run.PassThru = $true
 $configuration.Output.Verbosity = 'Normal'
 $configuration.TestDrive.Enabled = $false
@@ -15,5 +15,5 @@ $configuration.TestResult.OutputPath = Join-Path $PSScriptRoot 'artifacts\pester
 [void][IO.Directory]::CreateDirectory((Join-Path $PSScriptRoot 'artifacts'))
 $result = Invoke-Pester -Configuration $configuration
 if ($result.FailedCount -gt 0 -or $result.Result -ne 'Passed') {
-    throw "Tests en echec : $($result.FailedCount)."
+    throw "Tests failed: $($result.FailedCount)."
 }
